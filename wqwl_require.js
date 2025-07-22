@@ -1,5 +1,7 @@
 const crypto = require('crypto');
 const { httpsProxyAgent } = require('https-proxy-agent');
+const fs = require('fs');
+const path = require('path');
 const axios = require('axios');
 let message = "";
 //获取环境变量
@@ -80,6 +82,46 @@ async function getProxy() {
     }
 }
 
+
+// 固定存储目录
+const DATA_DIR = path.resolve(__dirname, 'wqwl_data');
+
+// 确保目录存在
+function ensureDataDirExists() {
+    if (!fs.existsSync(DATA_DIR)) {
+        fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+}
+
+// 保存 JSON 到 wqwl_data 目录（覆盖或新建）
+function saveFile(data, filename) {
+    ensureDataDirExists();
+
+    const filePath = path.join(DATA_DIR, `wqwl_${filename}.json`);
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 4), 'utf8');
+    console.log(`✅ 已保存文件到: ${filePath}`);
+}
+
+// 从 wqwl_data 目录读取 JSON
+function readFile(filename) {
+    const filePath = path.join(DATA_DIR, filename);
+
+    if (!fs.existsSync(filePath)) {
+        console.warn(`❌ 文件不存在: ${filePath}`);
+        return null;
+    }
+
+    try {
+        const rawData = fs.readFileSync(filePath, 'utf8');
+        const data = JSON.parse(rawData);
+        console.log(`✅ 已读取文件: ${filePath}`);
+        return data;
+    } catch (err) {
+        console.error(`❌ 读取或解析文件失败: ${err.message}`);
+        return null;
+    }
+}
+
 function disclaimer() {
     console.log(`⚠️免责声明
 1. 本脚本中涉及的解锁解密分析脚本仅用于测试、学习和研究，禁止用于商业目的。 其合法性、准确性、完整性和有效性无法得到保证。 请根据实际情况作出自己的判断。
@@ -91,6 +133,7 @@ function disclaimer() {
 7. 任何以任何方式或直接或间接使用 autoScript 项目的任何脚本的人都应该仔细阅读此声明。本脚本保留随时更改或补充本免责声明的权利。 一旦您使用并复制了本脚本，您就被视为接受了本免责声明。
 8. 您必须在下载后 24 小时内从您的电脑或手机上彻底删除以上内容。
 9. 您在本脚本使用或复制了由本人开发的任何脚本，即视为已接受此声明。请在使用前仔细阅读以上条款。
+10. 脚本来源：https://github.com/298582245/wqwl_qinglong，QQ裙：960690899
 ============================
         `)
 }
@@ -104,5 +147,7 @@ module.exports = {
     md5: md5, //md5,
     request: request, //请求
     getProxy: getProxy, //获取代理
-    disclaimer: disclaimer //免责声明
+    disclaimer: disclaimer, //免责声明
+    saveFile: saveFile, //保存文件
+    readFile: readFile, //读取文件
 };
