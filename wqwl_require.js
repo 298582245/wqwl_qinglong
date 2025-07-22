@@ -99,7 +99,7 @@ function saveFile(data, filename) {
 
     const filePath = path.join(DATA_DIR, `wqwl_${filename}.json`);
     fs.writeFileSync(filePath, JSON.stringify(data, null, 4), 'utf8');
-    console.log(`✅ 已保存文件到: ${filePath}`);
+    //console.log(`✅ 已保存文件到: ${filePath}`);
 }
 
 // 从 wqwl_data 目录读取 JSON
@@ -114,7 +114,7 @@ function readFile(filename) {
     try {
         const rawData = fs.readFileSync(filePath, 'utf8');
         const data = JSON.parse(rawData);
-        console.log(`✅ 已读取文件: ${filePath}`);
+        //console.log(`✅ 已读取文件: ${filePath}`);
         return data;
     } catch (err) {
         console.error(`❌ 读取或解析文件失败: ${err.message}`);
