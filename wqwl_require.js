@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { httpsProxyAgent } = require('https-proxy-agent');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
@@ -52,13 +52,52 @@ function md5(str, uppercase = false) {
     return uppercase ? result.toUpperCase() : result;
 }
 
+function aesEncrypt(data, key, iv = '', cipher = 'aes-256-cbc', keyEncoding = 'utf8', inputEncoding = 'utf8', outputEncoding = 'hex') {
+    let keyBuffer = Buffer.from(key, keyEncoding);
+    const ivBuffer = iv ? Buffer.from(iv, 'utf8') : null;
+
+    const cipherObj = crypto.createCipheriv(cipher, keyBuffer, ivBuffer);
+    cipherObj.setAutoPadding(true); // 确保使用 PKCS7 填充
+
+    let encrypted = cipherObj.update(data, inputEncoding, outputEncoding);
+    encrypted += cipherObj.final(outputEncoding);
+
+    return encrypted;
+}
+
+function aesDecrypt(encryptedData, key, iv = '', cipher = 'aes-128-cbc', keyEncoding = 'utf8', outputEncoding = 'utf8') {
+    const encryptedBuffer = Buffer.isBuffer(encryptedData)
+        ? encryptedData
+        : Buffer.from(encryptedData, 'hex');
+    const keyBuffer = Buffer.from(key, keyEncoding);
+
+    const ivBuffer = iv ? Buffer.from(iv, keyEncoding) : Buffer.alloc(0);
+    const decipher = crypto.createDecipheriv(cipher, keyBuffer, ivBuffer);
+    let decrypted = decipher.update(encryptedBuffer);
+    decrypted = Buffer.concat([decrypted, decipher.final()]);
+    return decrypted.toString(outputEncoding);
+}
+
+
 async function request(options, proxy = '') {
-    const agent = proxy ? httpsProxyAgent(`http://${proxy}`) : null;
+    let agent = null;
+
+    if (proxy) {
+        try {
+            agent = new HttpsProxyAgent(`http://${proxy}`);
+        } catch (e) {
+            console.error('创建代理失败:', e.message);
+            return null;
+        }
+    }
+    const config = {
+        ...options,
+        httpsAgent: agent,
+        httpAgent: agent,
+    };
+
     try {
-        const response = await axios(options, {
-            httpsAgent: agent,
-            httpAgent: agent
-        });
+        const response = await axios(config);
         return response.data;
     } catch (e) {
         console.log(e.message);
@@ -74,10 +113,10 @@ async function getProxy() {
 
     try {
         const response = await axios(config);
-        console.log('获取到的代理:', response.data.trim());
+        console.log('获取到的代理✅：', response.data.trim());
         return response.data.trim(); // 返回代理 IP:端口
     } catch (error) {
-        console.error('获取代理失败:', error.message);
+        console.error('获取代理失败❌：', error.message);
         throw error;
     }
 }
@@ -130,7 +169,7 @@ function disclaimer() {
 4. 任何间接使用该脚本的用户，包括但不限于建立 VPS 或在某些行为违反国家/地区法律或相关法规时传播该脚本，本脚本不承担由此造成的任何隐私泄露或其他后果。
 5. 请勿将本脚本项目的任何内容用于商业或非法目的，否则所造成的后果由您自行承担。
 6. 任何单位或个人认为项目脚本可能侵犯其权利时，应及时通知并提供身份证明和所有权证明。 我们会在收到认证文件后删除相应的脚本。
-7. 任何以任何方式或直接或间接使用 autoScript 项目的任何脚本的人都应该仔细阅读此声明。本脚本保留随时更改或补充本免责声明的权利。 一旦您使用并复制了本脚本，您就被视为接受了本免责声明。
+7. 任何以任何方式或直接或间接使用 wqwl_qinglong 项目的任何脚本的人都应该仔细阅读此声明。本脚本保留随时更改或补充本免责声明的权利。 一旦您使用并复制了本脚本，您就被视为接受了本免责声明。
 8. 您必须在下载后 24 小时内从您的电脑或手机上彻底删除以上内容。
 9. 您在本脚本使用或复制了由本人开发的任何脚本，即视为已接受此声明。请在使用前仔细阅读以上条款。
 10. 脚本来源：https://github.com/298582245/wqwl_qinglong，QQ裙：960690899
@@ -150,4 +189,6 @@ module.exports = {
     disclaimer: disclaimer, //免责声明
     saveFile: saveFile, //保存文件
     readFile: readFile, //读取文件
+    aesEncrypt: aesEncrypt, //aes加密
+    aesDecrypt: aesDecrypt,  //aes解密
 };
