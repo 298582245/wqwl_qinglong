@@ -3,10 +3,17 @@ const { HttpsProxyAgent } = require('https-proxy-agent');
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
+const https = require('https');
+const { constants } = require('crypto');
 let message = "";
 //获取环境变量
 function checkEnv(userCookie) {
     try {
+        if (!userCookie || userCookie === "" || userCookie === undefined || userCookie === "undefined" || userCookie === null || userCookie === "null") {
+            console.log("没配置环境变量就要跑脚本啊！！！");
+            console.log("🔔还没开始已经结束!");
+            process.exit(1);
+        }
         const envSplitor = ["&", "\n"];
         //this.sendMessage(userCookie);
         let userList = userCookie
@@ -18,7 +25,7 @@ function checkEnv(userCookie) {
             process.exit(1);
         }
 
-        console.log(`共找到${userList.length}个账号`);
+        console.log(`✅共找到${userList.length}个账号`);
         return userList;
     } catch (e) {
         console.log("环境变量格式错误,下面是报错信息")
@@ -80,13 +87,19 @@ function aesDecrypt(encryptedData, key, iv = '', cipher = 'aes-128-cbc', keyEnco
 
 
 async function request(options, proxy = '') {
-    let agent = null;
+    let agent = new https.Agent({
+        ciphers: 'DEFAULT@SECLEVEL=1', // 允许弱加密算法
+        secureOptions: constants.SSL_OP_LEGACY_SERVER_CONNECT, // 关键！允许不安全协商
+        minVersion: 'TLSv1',
+        maxVersion: 'TLSv1.2',
+        rejectUnauthorized: false
+    });
 
     if (proxy) {
         try {
             agent = new HttpsProxyAgent(`http://${proxy}`);
         } catch (e) {
-            console.error('创建代理失败:', e.message);
+            console.error('创建代理失败❌：', e.message);
             return null;
         }
     }
@@ -143,7 +156,7 @@ function saveFile(data, filename) {
 
 // 从 wqwl_data 目录读取 JSON
 function readFile(filename) {
-    const filePath = path.join(DATA_DIR, filename);
+    const filePath = path.join(DATA_DIR, `wqwl_${filename}.json`);
 
     if (!fs.existsSync(filePath)) {
         console.warn(`❌ 文件不存在: ${filePath}`);
@@ -159,6 +172,73 @@ function readFile(filename) {
         console.error(`❌ 读取或解析文件失败: ${err.message}`);
         return null;
     }
+}
+
+// 生成随机版本号
+function getRandomVersion() {
+    const major = Math.floor(Math.random() * 10) + 6; // 6-15
+    const minor = Math.floor(Math.random() * 100);
+    const patch = Math.floor(Math.random() * 1000);
+    return `${major}.0.${minor}.${patch}`;
+}
+
+// 生成随机日期格式
+function getRandomDate() {
+    const year = 2022 + Math.floor(Math.random() * 3); // 2022-2024
+    const month = String(Math.floor(Math.random() * 12) + 1).padStart(2, '0');
+    const day = String(Math.floor(Math.random() * 28) + 1).padStart(2, '0');
+    return `${year}${month}${day}`;
+}
+
+// 生成随机微信版本
+function getRandomWeChatVersion() {
+    const major = 8;
+    const minor = Math.floor(Math.random() * 50); // 0-49
+    const patch = Math.floor(Math.random() * 3000); // 0-2999
+    const hex = Math.floor(Math.random() * 0x3000) + 0x28000000;
+    return `${major}.0.${minor}.${patch}(0x${hex.toString(16)})`;
+}
+
+// 生成随机数字ID
+function getRandomId(length) {
+    return Math.floor(Math.random() * Math.pow(10, length)).toString().padStart(length, '0');
+}
+
+// 生成随机UA
+function generateRandomUA() {
+    const common = {
+        prefix: 'Mozilla/5.0 (Linux; Android ',
+        webkit: 'AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/',
+        mobileSafari: 'Mobile Safari/537.36 ',
+        xwebPrefix: 'XWEB/',
+        mmwebSdkPrefix: 'MMWEBSDK/',
+        mmwebIdPrefix: 'MMWEBID/',
+        microMessengerPrefix: 'MicroMessenger/',
+        wechat: 'WeChat/arm64 Weixin NetType/',
+        language: 'Language/zh_CN ABI/arm64 MiniProgramEnv/android'
+    };
+    // 设备信息池
+    const devices = [
+        { model: 'SM-G998B', build: 'TP1A.220624.014', androidVersion: '13' },
+        { model: 'Pixel 7', build: 'UQ1A.231205.015', androidVersion: '14' },
+        { model: 'MI 11', build: 'SKQ1.211006.001', androidVersion: '12' },
+        { model: 'Redmi Note 12', build: 'SKQ1.211006.001', androidVersion: '12' },
+        { model: 'OPPO Find X5', build: 'TP1A.220624.014', androidVersion: '13' }
+    ];
+
+    // 网络类型池
+    const netTypes = ['WIFI', '4G', '5G'];
+
+    const device = devices[Math.floor(Math.random() * devices.length)];
+    const netType = netTypes[Math.floor(Math.random() * netTypes.length)];
+
+    const chromeVersion = getRandomVersion();
+    const xwebVersion = Math.floor(Math.random() * 2000) + 5000;
+    const mmwebSdkDate = getRandomDate();
+    const mmwebId = getRandomId(4);
+    const microMessengerVersion = getRandomWeChatVersion();
+
+    return `${common.prefix}${device.androidVersion}; ${device.model} Build/${device.build}; wv) ${common.webkit}${chromeVersion} ${common.mobileSafari}${common.xwebPrefix}${xwebVersion} ${common.mmwebSdkPrefix}${mmwebSdkDate} ${common.mmwebIdPrefix}${mmwebId} ${common.microMessengerPrefix}${microMessengerVersion} ${common.wechat}${netType} ${common.language}`;
 }
 
 function disclaimer() {
@@ -191,4 +271,5 @@ module.exports = {
     readFile: readFile, //读取文件
     aesEncrypt: aesEncrypt, //aes加密
     aesDecrypt: aesDecrypt,  //aes解密
+    generateRandomUA: generateRandomUA, //生成随机UA
 };

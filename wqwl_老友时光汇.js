@@ -1,4 +1,6 @@
 /**
+ * update: 25/08/04
+ * 更新内容：优化了一下答题次数
  * 脚本：wqwl_老友时光汇.js
  * 作者：wqwlkj 裙：960690899
  * 描述：微信小程序老友时光汇
@@ -63,21 +65,33 @@ const crypto = require('crypto');
             }
             async init() {
                 this.headers = {
-                    "accept": "*/*",
-                    "accept-language": "zh-CN,zh;q=0.9",
-                    "code": "",
-                    "content-type": "application/json;charset=UTF-8",
-                    "User-Agent": "Mozilla/5.0 (Linux; Android 14; PJE110 Build/TP1A.220905.001; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/138.0.7204.157 Mobile Safari/537.36 XWEB/1380055 MMWEBSDK/20241202 MMWEBID/2052 MicroMessenger/8.0.56.2800(0x2800385E) WeChat/arm64 Weixin NetType/WIFI Language/zh_CN ABI/arm64 MiniProgramEnv/android",
-                    "deviceid": '',
-                    "project-name": "xld",
-                    "sec-fetch-dest": "empty",
-                    "sec-fetch-mode": "cors",
-                    "sec-fetch-site": "cross-site",
-                    "x-token": this.cookie,
-                    "xweb_xhr": "1",
-                    "Referer": "https://servicewechat.com/wxa973bdd2c6278631/13/page-frame.html",
+
+                    "Host": "api.zijinzhaoyao.com",
+                    "code": '',
+                    "Connection": "keep-alive",
+                    "Cache-Control": "no-cache",
+                    "sec-ch-ua": "",
+                    "Accept": "application/json, text/plain, */*",
+                    "Accept-Encoding": "gzip, deflate, br",
+                    "Accept-Language": "zh-CN,zh;q=0.9",
+                    "Content-Type": "application/json;charset=UTF-8",
+                    "Sec-Fetch-Site": "cross-site",
+                    "Sec-Fetch-Mode": "cors",
+                    "Sec-Fetch-Dest": "empty",
                     "Referrer-Policy": "unsafe-url",
-                    'Cookie': 'acw_tc=276aedc517538354866075182e3de0209ac0de0e994cac6968fd01b225d76f'
+                    "xweb_xhr": "1",
+                    "User-Agent": wqwlkj.generateRandomUA(),
+                    "miniprogram-environment": "wechat",
+                    "wxapp-version": "1.0.3",
+                    "x-requested-with": "XMLHttpRequest",
+                    "project-name": "yl",
+                    "x-token": this.cookie,
+                    "x-tt-device-id": this.getDeviceId(),
+                    "deviceid": "",
+                    "Origin": "https://servicewechat.com",
+                    "Referer": "https://servicewechat.com/wxa973bdd2c6278631/13/page-frame.html",
+                    "Cookie": `acw_tc=${Date.now()}_${wqwlkj.getRandom(1000, 9999)};`
+
                 }
                 if (process.env["wqwl_daili"] != undefined) {
                     this.proxy = await wqwlkj.getProxy()
@@ -104,7 +118,12 @@ const crypto = require('crypto');
                 await wqwlkj.sleep(wqwlkj.getRandom(1, 3))
 
             }
-
+            // 生成设备ID
+            getDeviceId() {
+                const prefix = "android-";
+                const randomStr = crypto.randomBytes(12).toString('hex');
+                return prefix + randomStr;
+            }
             // 签到
             async sign() {
                 let result
@@ -122,7 +141,7 @@ const crypto = require('crypto');
                     result = await wqwlkj.request(options, this.proxy)
                     this.headers['code'] = 'adsadada'
                     if (result.data === false) {
-                        this.headers['deviceid'] = this.getAES()
+                        this.headers['deviceid'] = this.getAES('adsadada')
                         const options = {
                             url: `${this.url}/userSign`,
                             method: 'POST',
@@ -166,14 +185,26 @@ const crypto = require('crypto');
                                 const title = activity.title
                                 const endTime = new Date(activity.endTime * 1000).toLocaleString()
                                 const leftMoney = activity.leftMoney
-                                const times = activity.times
+                                const times = activity.times - activity.count
+                                let allTimes = 0
+                                let testTimes = 0
                                 if (leftMoney > 0 && times > 0 && activity.endTime * 1000 > Date.now()) {
                                     this.sendMessage(`获取到活动:【 ${title}】，结束时间: ${endTime}，剩余金额: ${leftMoney}，开始答题`)
-                                    for (let j = 0; j < times; j++) {
+                                    while (times > allTimes && testTimes < 10) {
                                         // console.log(`活动id:${id}`)
-                                        await this.startAnswer(id)
-
-                                        await wqwlkj.sleep(wqwlkj.getRandom(3, 10))
+                                        this.sendMessage(`第${allTimes + 1}次答题`)
+                                        const result = await this.startAnswer(id)
+                                        testTimes++
+                                        if (testTimes >= 10) {
+                                            this.sendMessage(`❌已连续答题10次未成功，请稍后再试`)
+                                            break
+                                        }
+                                        if (!result) {
+                                            await wqwlkj.sleep(wqwlkj.getRandom(5, 10))
+                                            continue
+                                        }
+                                        allTimes++
+                                        await wqwlkj.sleep(wqwlkj.getRandom(5, 10))
                                     }
                                     await this.getUserCredits()
 
@@ -211,21 +242,25 @@ const crypto = require('crypto');
                         const examId = resData.data.examId
                         const answer = resData.data.question.answer
                         if (id && examId && answer) {
-                            await this.submitAnswer(id, examId, answer, questionNum)
-                            await wqwlkj.sleep(wqwlkj.getRandom(3, 10))
-                            await this.saveLog(this.userId, id)
-                            await wqwlkj.sleep(wqwlkj.getRandom(3, 10))
-                            await this.submitExam(id, examId)
+                            const res1 = await this.submitAnswer(id, examId, answer, questionNum)
+                            await wqwlkj.sleep(wqwlkj.getRandom(5, 10))
+                            const res2 = await this.saveLog(this.userId, id)
+                            await wqwlkj.sleep(wqwlkj.getRandom(10, 15))
+                            const res3 = await this.submitExam(id, examId)
+                            return res1 && res2 && res3
                         }
                         else {
                             this.sendMessage('获取答案失败')
+                            return false
                         }
                     } else {
                         this.sendMessage(`开始答题失败：${res.message}`)
+                        return false
                     }
                 }
                 catch (e) {
                     throw new Error(`开始答题请求失败: ${e.message}`)
+
                 }
             }
 
@@ -247,8 +282,10 @@ const crypto = require('crypto');
                     const res = await wqwlkj.request(options, this.proxy)
                     if (res.code === 0) {
                         this.sendMessage(`提交答案请求结果：${res.data.isCorrect === true ? '✅正确' : '❌错误'}`)
+                        return true
                     } else {
                         this.sendMessage(`提交答案失败，${res.message}`)
+                        return false
                     }
                 }
                 catch (e) {
@@ -262,7 +299,7 @@ const crypto = require('crypto');
                         id: id,
                         examId: examId,
                     })
-                    const code = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+                    const code = this.getRandomCode()
                     const deviceid = this.getAES(code)
                     this.headers['code'] = code
                     this.headers['deviceid'] = deviceid
@@ -277,9 +314,11 @@ const crypto = require('crypto');
                     const res = await wqwlkj.request(options, this.proxy)
                     if (res.code === 0) {
                         this.sendMessage(`提交最终结果奖励：✅🪙积分：${res.data.credits}，💰现金：${res.data.money}元`)
+                        return true
                     } else {
-                        console.log(res)
+                        //  console.log(res)
                         this.sendMessage(`提交最终结果失败❌，${res.message}`)
+                        return false
                     }
                 }
                 catch (e) {
@@ -304,7 +343,7 @@ const crypto = require('crypto');
                         data: data
                     }
                     const res = await wqwlkj.request(options, this.proxy)
-
+                    return true
                     //console.log(res)
                 } catch (e) {
                     throw new Error(`保存日志请求失败❌: ${e.message}`)
@@ -324,7 +363,7 @@ const crypto = require('crypto');
                     if (res.code === 0) {
                         const amount = res.data.credits
                         this.sendMessage(`获取用户积分成功✅: ${amount}`)
-                        if (amount > 0) {
+                        if (amount > 50) {
                             this.sendMessage(`积分可以兑换,开始自动兑换`)
                             await this.creditExchange(amount)
                         }
@@ -347,6 +386,8 @@ const crypto = require('crypto');
                     const res = await wqwlkj.request(options, this.proxy)
                     if (res.code === 0) {
                         this.sendMessage(`兑换成功✅：约${credits / 10}元`, true)
+                    } else {
+                        this.sendMessage(`兑换失败❌: ${JSON.stringify(res)}`)
                     }
                 } catch (e) {
                     throw new Error(`兑换失败，${e.message}`)
@@ -354,12 +395,12 @@ const crypto = require('crypto');
             }
 
             getAES(code) {
-                const ramdom = wqwlkj.getRandom(31, 50)
+                const ramdom = wqwlkj.getRandom(31, 40)
                 const adStartTime = Date.now() + ramdom * 1000; // 假设广告 35 秒前开始
                 const now = Date.now();
                 const c = adStartTime ? Math.floor((now - adStartTime) / 1000) : 0;
                 const deviceIdObj = {
-                    code: code || 'adsadada',
+                    code: code || Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15),
                     t: Math.floor(now / 1000),
                     c: c
                 };
@@ -369,6 +410,10 @@ const crypto = require('crypto');
                 const key = 'Kj8mN2pQ9rS5tU7vW3xY1zA4bC6dE8fG';
                 const iv = 'H7nM4kL9pQ2rS5tU';
                 return wqwlkj.aesEncrypt(plaintext, key, iv, 'aes-256-cbc', 'utf8', 'utf8', 'hex');
+            }
+
+            getRandomCode() {
+                return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
             }
 
             sendMessage(message, isPush = false) {
