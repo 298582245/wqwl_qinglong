@@ -43,6 +43,8 @@ const name = '微信小程序毛铺草本荟'
         wqwlkj = require('./wqwl_require');
     } else {
         console.log('正在下载wqwl_require.js，请稍等...\n');
+        console.log(`如果下载过慢，可以手动下载wqwl_require.js，并保存为wqwl_require.js，并重新运行脚本`)
+        console.log('地址：' + url);
         try {
             const res = await axios.get(url);
             fs.writeFileSync(filePath, res.data);
