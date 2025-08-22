@@ -5,6 +5,7 @@ const path = require('path');
 const axios = require('axios');
 const https = require('https');
 const { constants } = require('crypto');
+//const { console } = require('inspector');
 let message = "";
 //获取环境变量
 function checkEnv(userCookie) {
@@ -46,6 +47,7 @@ function sendMessage(text, isPush = true) {
         message += text + "\n";
     }
     console.log(text);
+    return text;
 }
 
 function getMessage() {
@@ -113,25 +115,37 @@ async function request(options, proxy = '') {
         const response = await axios(config);
         return response.data;
     } catch (e) {
-        console.log(e.message);
-        return null;
+        throw new Error(e.message);
+        return e.message;
     }
 }
 
-async function getProxy() {
+async function getProxy(index, url) {
     const config = {
         method: 'get',
-        url: process.env['wqwl_daili']
+        url: url || process.env['wqwl_daili']
     };
 
-    try {
-        const response = await axios(config);
-        console.log('获取到的代理✅：', response.data.trim());
-        return response.data.trim(); // 返回代理 IP:端口
-    } catch (error) {
-        console.error('获取代理失败❌：', error.message);
-        throw error;
+    let retries = 3;
+    let lastError;
+
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            const response = await axios(config);
+            //console.log(`账号[${index + 1}]: 获取到的代理✅： ${response.data.trim()}`);
+            return response.data.trim(); // 返回代理 IP:端口
+        } catch (error) {
+            lastError = error;
+            console.error(`账号[${index + 1}]：🔐获取代理失败，正在重试...`);
+
+            if (attempt < retries) {
+                // 等待一段时间再重试（可选）
+                await new Promise(resolve => setTimeout(resolve, 3000 * attempt));
+            }
+        }
     }
+    console.error(`账号[${index + 1}]：获取代理失败，已重试${retries}次❌`);
+    return '';
 }
 
 
@@ -159,8 +173,8 @@ function readFile(filename) {
     const filePath = path.join(DATA_DIR, `wqwl_${filename}.json`);
 
     if (!fs.existsSync(filePath)) {
-        console.warn(`❌ 文件不存在: ${filePath}`);
-        return null;
+        console.warn(`⚠️ 文件不存在: ${filePath}，已自动创建文件。`);
+        return {};
     }
 
     try {
@@ -170,7 +184,7 @@ function readFile(filename) {
         return data;
     } catch (err) {
         console.error(`❌ 读取或解析文件失败: ${err.message}`);
-        return null;
+        return {};
     }
 }
 
@@ -241,6 +255,24 @@ function generateRandomUA() {
     return `${common.prefix}${device.androidVersion}; ${device.model} Build/${device.build}; wv) ${common.webkit}${chromeVersion} ${common.mobileSafari}${common.xwebPrefix}${xwebVersion} ${common.mmwebSdkPrefix}${mmwebSdkDate} ${common.mmwebIdPrefix}${mmwebId} ${common.microMessengerPrefix}${microMessengerVersion} ${common.wechat}${netType} ${common.language}`;
 }
 
+function formatDate(date, isDetail = false) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    if (isDetail)
+        return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    return `${year}-${month}-${day}`;
+}
+
+function sha1(str) {
+    if (!str)
+        return ''
+    return crypto.createHash('sha1').update(str).digest('hex');
+}
+
 function disclaimer() {
     console.log(`⚠️免责声明
 1. 本脚本中涉及的解锁解密分析脚本仅用于测试、学习和研究，禁止用于商业目的。 其合法性、准确性、完整性和有效性无法得到保证。 请根据实际情况作出自己的判断。
@@ -271,5 +303,7 @@ module.exports = {
     readFile: readFile, //读取文件
     aesEncrypt: aesEncrypt, //aes加密
     aesDecrypt: aesDecrypt,  //aes解密
-    generateRandomUA: generateRandomUA, //生成随机UA
+    generateRandomUA: generateRandomUA, //生成随机UA,
+    formatDate: formatDate, //格式化时间
+    sha1: sha1, //sha1
 };
