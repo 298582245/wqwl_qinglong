@@ -1,5 +1,4 @@
 const crypto = require('crypto');
-const { HttpsProxyAgent } = require('https-proxy-agent');
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
@@ -90,8 +89,8 @@ function aesDecrypt(encryptedData, key, iv = '', cipher = 'aes-128-cbc', keyEnco
 
 async function request(options, proxy = '') {
     let agent = new https.Agent({
-        ciphers: 'DEFAULT@SECLEVEL=1', // 允许弱加密算法
-        secureOptions: constants.SSL_OP_LEGACY_SERVER_CONNECT, // 关键！允许不安全协商
+        ciphers: 'DEFAULT@SECLEVEL=1',
+        secureOptions: constants.SSL_OP_LEGACY_SERVER_CONNECT,
         minVersion: 'TLSv1',
         maxVersion: 'TLSv1.2',
         rejectUnauthorized: false
@@ -99,12 +98,19 @@ async function request(options, proxy = '') {
 
     if (proxy) {
         try {
-            agent = new HttpsProxyAgent(`http://${proxy}`);
+            // 检查模块是否存在
+            if (typeof require('https-proxy-agent') === 'function' ||
+                typeof require('https-proxy-agent').HttpsProxyAgent === 'function') {
+                const { HttpsProxyAgent } = require('https-proxy-agent');
+                agent = new HttpsProxyAgent(`http://${proxy}`);
+            } else {
+                console.log('⚠️https-proxy-agent 模块未安装，将不使用代理');
+            }
         } catch (e) {
-            console.error('创建代理失败❌：', e.message);
-            return null;
+            console.log(`创建代理代理失败❌: ${e.message}`)
         }
     }
+
     const config = {
         ...options,
         httpsAgent: agent,
@@ -116,7 +122,6 @@ async function request(options, proxy = '') {
         return response.data;
     } catch (e) {
         throw new Error(e.message);
-        return e.message;
     }
 }
 
@@ -286,6 +291,9 @@ function disclaimer() {
 9. 您在本脚本使用或复制了由本人开发的任何脚本，即视为已接受此声明。请在使用前仔细阅读以上条款。
 10. 脚本来源：https://github.com/298582245/wqwl_qinglong，QQ裙：960690899
 ============================
+⚠️⚠️⚠️使用代理时，必须安装依赖：https-proxy-agent
+⚠️⚠️⚠️使用代理时，必须安装依赖：https-proxy-agent
+⚠️⚠️⚠️使用代理时，必须安装依赖：https-proxy-agent
         `)
 }
 
