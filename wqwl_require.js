@@ -73,10 +73,10 @@ function aesEncrypt(data, key, iv = '', cipher = 'aes-256-cbc', keyEncoding = 'u
     return encrypted;
 }
 
-function aesDecrypt(encryptedData, key, iv = '', cipher = 'aes-128-cbc', keyEncoding = 'utf8', outputEncoding = 'utf8') {
+function aesDecrypt(encryptedData, key, iv = '', cipher = 'aes-128-cbc', keyEncoding = 'utf8', outputEncoding = 'utf8', inputEncoding = 'hex') {
     const encryptedBuffer = Buffer.isBuffer(encryptedData)
         ? encryptedData
-        : Buffer.from(encryptedData, 'hex');
+        : Buffer.from(encryptedData, inputEncoding);
     const keyBuffer = Buffer.from(key, keyEncoding);
 
     const ivBuffer = iv ? Buffer.from(iv, keyEncoding) : Buffer.alloc(0);

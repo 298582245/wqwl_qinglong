@@ -20,17 +20,19 @@ const fs = require('fs');
     const url = 'https://raw.githubusercontent.com/298582245/wqwl_qinglong/refs/heads/main/wqwl_require.js';
 
     if (fs.existsSync(filePath)) {
-        console.log('✅wqwl_require.js已存在，无需重新下载，如有报错请重新下载覆盖');
+        console.log('✅wqwl_require.js已存在，无需重新下载，如有报错请重新下载覆盖\n');
         wqwlkj = require('./wqwl_require');
     } else {
-        console.log('正在下载wqwl_require.js，请稍等...');
+        console.log('正在下载wqwl_require.js，请稍等...\n');
+        console.log(`如果下载过慢，可以手动下载wqwl_require.js，并保存为wqwl_require.js，并重新运行脚本`)
+        console.log('地址：' + url);
         try {
             const res = await axios.get(url);
             fs.writeFileSync(filePath, res.data);
-            console.log('✅下载完成，准备开始运行脚本');
+            console.log('✅下载完成，准备开始运行脚本\n');
             wqwlkj = require('./wqwl_require');
         } catch (e) {
-            console.log('❌下载失败，请手动下载wqwl_require.js，并保存为wqwl_require.js，并重新运行脚本');
+            console.log('❌下载失败，请手动下载wqwl_require.js，并保存为wqwl_require.js，并重新运行脚本\n');
             console.log('地址：' + url);
             return; // 下载失败，不再继续执行
         }
