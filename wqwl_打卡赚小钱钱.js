@@ -143,7 +143,7 @@ const name = '微信小程序打卡赚小钱钱'
                         headers: this.headers,
                         method: 'GET'
                     }
-                    const res = await wqwlkj.request(options, this.proxy)
+                    const res = await this.request(options, this.proxy)
                     this.sendMessage(`✅获取信息成功,打卡币：${res?.info?.today?.currency}，余额：${res?.info?.today?.money}，今日打卡次数：${res?.info?.today?.clock}`)
                     return { currency: res?.info?.today?.currency, money: res?.info?.today?.money, clock: res?.info?.today?.clock }
                 } catch (e) {
@@ -159,7 +159,7 @@ const name = '微信小程序打卡赚小钱钱'
                         headers: this.headers,
                         method: 'GET'
                     }
-                    const res = await wqwlkj.request(options, this.proxy)
+                    const res = await this.request(options, this.proxy)
                     if (res?.status === 1)
                         return true
                     else
@@ -181,7 +181,7 @@ const name = '微信小程序打卡赚小钱钱'
                         headers: this.headers,
                         method: 'GET'
                     }
-                    const res = await wqwlkj.request(options, this.proxy)
+                    const res = await this.request(options, this.proxy)
                     // console.log(res)
                     if (res?.status === 1)
                         return this.sendMessage(`✅模拟打卡成功`)
@@ -204,7 +204,7 @@ const name = '微信小程序打卡赚小钱钱'
                         headers: this.headers,
                         method: 'GET'
                     }
-                    const res = await wqwlkj.request(options, this.proxy)
+                    const res = await this.request(options, this.proxy)
                     // console.log(res)
                     if (res?.status === 1) {
                         const money = res?.info?.member?.money
@@ -230,7 +230,7 @@ const name = '微信小程序打卡赚小钱钱'
                         headers: this.headers,
                         method: 'GET'
                     }
-                    const res = await wqwlkj.request(options, this.proxy)
+                    const res = await this.request(options, this.proxy)
                     // console.log(res)
                     if (res?.status === 1) {
                         return this.sendMessage(`✅提现成功`)
