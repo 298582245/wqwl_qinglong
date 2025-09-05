@@ -137,7 +137,7 @@ const name = '微信小程序爱裹旧衣回收'
                         headers: this.headers,
                         method: 'GET'
                     }
-                    const res = await this.request(options, this.proxy)
+                    const res = await this.request(options, 0);
                     if (res.status === 200)
                         this.sendMessage(`✅签到成功`)
                     else
@@ -156,7 +156,7 @@ const name = '微信小程序爱裹旧衣回收'
                         method: 'POST',
                         data: {}
                     }
-                    const res = await this.request(options, this.proxy)
+                    const res = await this.request(options, 0);
                     if (res.status === 200) {
                         this.sendMessage(`✅当前积分为：${res.data}`)
                         return res.data
@@ -177,7 +177,7 @@ const name = '微信小程序爱裹旧衣回收'
                         headers: this.headers,
                         method: 'GET',
                     }
-                    const res = await this.request(options, this.proxy)
+                    const res = await this.request(options, 0);
                     //1756117235827
                     if ((typeof res === 'number' && res.toString().length === 13) ||
                         (typeof res === 'string' && res.length === 13)) {
@@ -200,7 +200,7 @@ const name = '微信小程序爱裹旧衣回收'
                         method: 'POST',
                         data: JSON.stringify({ data: "" }),
                     }
-                    const res = await this.request(options, this.proxy)
+                    const res = await this.request(options, 0);
                     if (res.status === 200) {
                         if (res.data.type === 0)
                             this.sendMessage(`✅抽奖成功，获得奖品：${res.data.name}`)
@@ -234,7 +234,7 @@ const name = '微信小程序爱裹旧衣回收'
                         method: 'POST',
                         data: data
                     }
-                    const res = await this.request(options, this.proxy)
+                    const res = await this.request(options, 0);
                     // console.log(res)
                     if (res.status === 200 || res.msg === '您已领取该任务') {
                         this.sendMessage(`✅【${task.taskName}】任务${task.status === 1 ? '完成' : '领取'}成功`)

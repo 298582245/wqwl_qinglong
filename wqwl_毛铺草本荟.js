@@ -81,6 +81,9 @@ const name = '微信小程序毛铺草本荟'
                 this.baseURL = 'https://mpb.jingjiu.com/proxy-he/api'
                 this.ck = ck
 
+                this.maxRetries = 3; // 最大重试次数
+                this.retryDelay = 3; // 重试延迟(秒)
+
                 //活动列表
                 this.activityConfig = {
                     lab: {
@@ -125,7 +128,7 @@ const name = '微信小程序毛铺草本荟'
             async sign() {
                 try {
                     if (!(this.auth))
-                        return
+                        return '授权过期'
                     const data = { date: this.getToday() }
                     const headers = this.getAppSign(data, ['date'])
                     const options = {
@@ -135,17 +138,77 @@ const name = '微信小程序毛铺草本荟'
                         data: data
                     }
                     //console.log(options)
-                    const result = await wqwlkj.request(options, this.proxy)
+                    const result = await this.request(options, 0)
                     // console.log(JSON.stringify(result))
                     if (result.code !== 0)
                         return this.sendMessage(result.message)
                     if (result.data.point_today && result.data.point_tomorrow)
-                        this.sendMessage(`✅签到成功，获得${result.data.point_today}积分，明天将获得${result.data.point_tomorrow}积分`, true)
+                        return this.sendMessage(`✅签到成功，获得${result.data.point_today}积分，明天将获得${result.data.point_tomorrow}积分`, true)
                 } catch (e) {
                     throw new Error(`❌签到接口请求失败，${e.message}`)
                 }
             }
 
+            //周五专属
+            async memberdayStart() {
+                if (!this.isAfterFriday8AM())
+                    return this.sendMessage(`⚠️非周五8:00-22:00时间段，不执行`)
+                try {
+                    if (!(this.auth))
+                        return;
+
+                    const data = {};
+                    const headers = this.getAppSign(data, []);
+                    const options = {
+                        url: `${this.baseURL}/BlzWeekActivity/memberdayUserMains`,
+                        headers: headers,
+                        method: 'POST',
+                        data: data
+                    };
+
+                    const result = await this.request(options, 0);
+                    if (result.code !== 0)
+                        return this.sendMessage(result.message);
+
+                    if (result.data.is_draw) {
+                        this.sendMessage(`周五俱乐部剩余次数：${result.data.is_draw}`);
+                    }
+                    if (result.data.draw_ticket && result.data.is_draw) {
+                        this.sendMessage(`开始周五俱乐部...`)
+                        await wqwlkj.sleep(wqwlkj.getRandom(10, 20))
+                        const data = { draw_ticket: result.data.draw_ticket }
+                        const headers = this.getAppSign(data, ['draw_ticket']);
+                        const options = {
+                            url: `${this.baseURL}/BlzWeekActivity/memberdayUserDraws`,
+                            headers: headers,
+                            method: 'POST',
+                            data: data
+                        };
+
+                        const result2 = await this.request(options, 0);
+                        if (result.code !== 0)
+                            return this.sendMessage(result.message)
+                        this.sendMessage(`✅周五俱乐部成功，获得${result2?.data?.AwardName || result2?.data?.awardLocal?.title || '未识别'}`, true);
+                    }
+                    else {
+                        this.sendMessage(`周五俱乐部获取ticket失败`)
+                    }
+                } catch (e) {
+                    throw new Error(`❌周五俱乐部请求接口失败，${e.message}`);
+                }
+            }
+            isAfterFriday8AM(date = new Date()) {
+                if (date.getDay() !== 5) {
+                    return false;
+                }
+
+                const hours = date.getHours();
+                const minutes = date.getMinutes();
+                const totalMinutes = hours * 60 + minutes;
+
+                // 8:00 = 480分钟, 22:00 = 1320分钟
+                return totalMinutes >= 480 && totalMinutes <= 1320;
+            }
             // 通用次数查询函数
             async commonUserMains(activityType) {
                 try {
@@ -165,7 +228,7 @@ const name = '微信小程序毛铺草本荟'
                         data: data
                     };
 
-                    const result = await wqwlkj.request(options, this.proxy);
+                    const result = await this.request(options, 0);
                     if (result.code !== 0)
                         return this.sendMessage(result.message);
 
@@ -202,7 +265,7 @@ const name = '微信小程序毛铺草本荟'
                         data: data
                     };
 
-                    const result = await wqwlkj.request(options, this.proxy);
+                    const result = await this.request(options, 0);
                     if (result.code !== 0)
                         return this.sendMessage(result.message);
                     if (result.data.user_record_id)
@@ -235,7 +298,7 @@ const name = '微信小程序毛铺草本荟'
                         data: data
                     };
 
-                    const result = await wqwlkj.request(options, this.proxy);
+                    const result = await this.request(options, 0);
                     if (result.code !== 0)
                         return this.sendMessage(result.message);
 
@@ -259,7 +322,7 @@ const name = '微信小程序毛铺草本荟'
                         method: 'POST',
                         data: data
                     }
-                    const result = await wqwlkj.request(options, this.proxy)
+                    const result = await this.request(options, 0)
                     //console.log(JSON.stringify(result))
                     if (result.code !== 0)
                         return this.sendMessage(result.message)
@@ -286,7 +349,7 @@ const name = '微信小程序毛铺草本荟'
                         method: 'POST',
                         data: data
                     }
-                    const result = await wqwlkj.request(options, this.proxy)
+                    const result = await this.request(options, 0)
                     if (result.code !== 0)
                         return this.sendMessage(result.message)
                     if (result.data.point === 0)
@@ -311,7 +374,7 @@ const name = '微信小程序毛铺草本荟'
                         headers: headers,
                         method: 'GET',
                     }
-                    const result = await wqwlkj.request(options, this.proxy)
+                    const result = await this.request(options, 0)
                     if (result.code !== 0)
                         return this.sendMessage(result.message)
                     this.sendMessage(`用户【${result.data.name}】积分：${result.data.point}`, true)
@@ -369,7 +432,9 @@ const name = '微信小程序毛铺草本荟'
                 await this.init(this.ck)
                 await wqwlkj.sleep(wqwlkj.getRandom(3, 5))
                 this.sendMessage(`开始签到...`)
-                await this.sign()
+                const result = await this.sign()
+                if (result == '' || result == null || result == undefined || result === '授权过期')
+                    return this.sendMessage('❌授权已过期或ck无效，请重新获取')
                 await wqwlkj.sleep(wqwlkj.getRandom(3, 5))
 
                 // 遍历所有配置的活动
@@ -405,10 +470,39 @@ const name = '微信小程序毛铺草本荟'
                 await this.taskSubscribeMessage()
                 await wqwlkj.sleep(wqwlkj.getRandom(3, 5))
 
+                await this.memberdayStart()
+                await wqwlkj.sleep(wqwlkj.getRandom(3, 5))
+
                 this.sendMessage(`开始获取个人信息...`)
                 await this.userInfo()
             }
+            // 带重试机制的请求方法
+            async request(options, retryCount = 0) {
+                try {
+                    const data = await wqwlkj.request(options, this.proxy);
+                    return data;
 
+                } catch (error) {
+                    this.sendMessage(`🔐检测到请求发生错误，正在重试...`)
+                    let newProxy;
+                    if (isProxy) {
+                        newProxy = await wqwlkj.getProxy(this.index, proxy);
+                        this.proxy = newProxy
+                        this.sendMessage(`✅代理更新成功:${this.proxy}`);
+                    } else {
+                        this.sendMessage(`⚠️未使用代理`);
+                        newProxy = true
+                    }
+
+                    if (retryCount < this.maxRetries && newProxy) {
+                        this.sendMessage(`🕒${this.retryDelay * (retryCount + 1)}s秒后重试...`);
+                        await wqwlkj.sleep(this.retryDelay * (retryCount + 1));
+                        return await this.request(options, retryCount + 1);
+                    }
+
+                    throw new Error(`❌请求最终失败: ${error.message}`);
+                }
+            }
 
             sendMessage(message, isPush = false) {
                 message = `账号[${this.index + 1}](${this.remark}): ${message}`

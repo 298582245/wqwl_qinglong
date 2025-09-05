@@ -74,7 +74,7 @@ const name = '微信小程序芃儒文章'
             }
         }
 
-        let fileData = wqwlkj.readFile('frwz')
+        let fileData = wqwlkj.readFile('frwz') || {};
         class Task {
             constructor(ck) {
                 this.index = index++;
