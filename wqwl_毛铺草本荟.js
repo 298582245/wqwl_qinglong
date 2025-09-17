@@ -11,6 +11,8 @@
 const axios = require('axios');
 const fs = require('fs');
 
+const city = process.env["wq_mp_diqu"] || "上海市";//不知道影不影响中奖，觉得影响自己改成自己的就行
+
 //代理链接
 let proxy = process.env["wqwl_daili"] || '';
 
@@ -149,6 +151,86 @@ const name = '微信小程序毛铺草本荟'
                 }
             }
 
+            //谁是5冕之王
+            async wumianStart() {
+                try {
+                    if (!(this.auth))
+                        return;
+
+                    const data = { "activity_code": "", "city": city };//地区自己改吧
+                    const headers = this.getAppSign(data, ['activity_code', 'city']);
+                    const options = {
+                        url: `${this.baseURL}/BlzLongcaobenActivity/wumianUserMains`,
+                        headers: headers,
+                        method: 'POST',
+                        data: data
+                    };
+
+                    const result = await this.request(options, 0);
+                    // console.log(JSON.stringify(result))
+                    if (result?.code !== 0)
+                        return this.sendMessage(`谁是5冕之王获取次数失败，原因：${result.message}`);
+
+                    if (result?.data?.today_play_num_can) {
+                        this.sendMessage(`谁是5冕之王剩余次数：${result?.data?.today_play_num_can}`);
+                    }
+                    if (result?.data?.today_play_num_can > 0 && result?.data?.activity?.activity_id) {
+                        this.sendMessage(`开始谁是5冕之王...`)
+                        const data2 = { "activity_id": result?.data?.activity?.activity_id };
+                        const headers2 = this.getAppSign(data, ['activity_id']);
+                        const options2 = {
+                            url: `${this.baseURL}/BlzLongcaobenActivity/wumianUserMains`,
+                            headers: headers2,
+                            method: 'POST',
+                            data: data2
+                        };
+
+                        const result2 = await this.request(options2, 0);
+                        if (result2?.code !== 0)
+                            return this.sendMessage(`谁是5冕之王获取信息失败，原因：${result2.message}`);
+                        const data3 = { "activity_id": result?.data?.activity?.activity_id, 'play_time_start': Math.floor(Date.now() / 1000) };
+                        const headers3 = this.getAppSign(data, ['activity_id', 'play_time_start']);
+                        const options3 = {
+                            url: `${this.baseURL}/BlzLongcaobenActivity/wumianUserDrawGet`,
+                            headers: headers3,
+                            method: 'POST',
+                            data: data3
+                        };
+
+                        const result3 = await this.request(options3, 0);
+                        if (result3?.code !== 0)
+                            return this.sendMessage(`谁是5冕之王开始失败，原因：${result3.message}`);
+                        await wqwlkj.sleep(wqwlkj.getRandom(30, 40))
+                        if (result3?.data?.user_record_id) {
+                            this.sendMessage(`获取到游戏记录id：${result3?.data?.user_record_id}`)
+                            const data4 = { "user_record_id": result3?.data?.user_record_id, 'play_time_finish': Math.floor(Date.now() / 1000) };
+                            const headers4 = this.getAppSign(data, ['user_record_id', 'play_time_finish']);
+                            const options4 = {
+                                url: `${this.baseURL}/BlzLongcaobenActivity/wumianUserDraws`,
+                                headers: headers4,
+                                method: 'POST',
+                                data: data4
+                            };
+
+                            const result4 = await this.request(options4, 0);
+                            if (result4?.code !== 0)
+                                return this.sendMessage(`谁是5冕之王结束失败，原因：${result4.message}`);
+                            this.sendMessage(`✅谁是5冕之王成功，获得${result4?.data?.award?.AwardName || result4?.data?.awardLocal?.title || '未识别'}`, true);
+
+                        }
+                        else {
+                            this.sendMessage(`❌谁是5冕之王user_record_id获取失败`)
+                        }
+
+                    }
+                    else {
+                        this.sendMessage(`❌谁是5冕之王activity_code获取失败`)
+                    }
+                } catch (e) {
+                    throw new Error(`❌谁是5冕之王请求接口失败，${e.message}`);
+                }
+            }
+
             //周五专属
             async memberdayStart() {
                 if (!this.isAfterFriday8AM())
@@ -173,7 +255,7 @@ const name = '微信小程序毛铺草本荟'
                     if (result.data.is_draw) {
                         this.sendMessage(`周五俱乐部剩余次数：${result.data.is_draw}`);
                     }
-                    if (result.data.draw_ticket && result.data.is_draw) {
+                    if (result.data.draw_ticket && result.data.is_draw > 0) {
                         this.sendMessage(`开始周五俱乐部...`)
                         await wqwlkj.sleep(wqwlkj.getRandom(10, 20))
                         const data = { draw_ticket: result.data.draw_ticket }
@@ -434,9 +516,9 @@ const name = '微信小程序毛铺草本荟'
                 this.sendMessage(`开始签到...`)
                 const result = await this.sign()
                 if (result == '' || result == null || result == undefined || result === '授权过期')
-                    return this.sendMessage('❌授权已过期或ck无效，请重新获取')
+                    return this.sendMessage('❌授权已过期或ck无效，请重新获取', true)
                 await wqwlkj.sleep(wqwlkj.getRandom(3, 5))
-
+                await this.wumianStart()
                 // 遍历所有配置的活动
                 for (const [activityType, config] of Object.entries(this.activityConfig)) {
                     this.sendMessage(`开始${config.name}游戏...`);
@@ -450,7 +532,7 @@ const name = '微信小程序毛铺草本荟'
 
                         if (recordId) {
                             // 随机等待时间
-                            const delay = wqwlkj.getRandom(config.minDelay, config.maxDelay);
+                            const delay = wqwlkj.getRandom(30, 40);
                             await wqwlkj.sleep(delay);
 
                             // 结束活动
