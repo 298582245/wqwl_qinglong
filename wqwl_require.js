@@ -115,6 +115,7 @@ async function request(options, proxy = '') {
         ...options,
         httpsAgent: agent,
         httpAgent: agent,
+        validateStatus: () => true,
     };
 
     try {
@@ -278,6 +279,65 @@ function sha1(str) {
     return crypto.createHash('sha1').update(str).digest('hex');
 }
 
+/**
+ * 通用RSA加密函数
+ * @param {string|Object} data - 要加密的数据
+ * @param {string} publicKey - 公钥(PEM格式)
+ * @param {string} outputEncoding - 输出编码格式：'base64', 'hex', 'buffer'，默认'base64'
+ * @param {string} inputEncoding - 输入编码，默认'utf8'
+ * @param {number} padding - 填充方式，默认RSA_PKCS1_PADDING
+ * @returns {string|Buffer} 加密后的数据
+ */
+function rsaEncrypt(data, publicKey, outputEncoding = 'base64', inputEncoding = 'utf8', padding = crypto.constants.RSA_PKCS1_PADDING) {
+    const text = typeof data === 'string' ? data : JSON.stringify(data);
+
+    const buffer = crypto.publicEncrypt(
+        {
+            key: publicKey,
+            padding: padding
+        },
+        Buffer.from(text, inputEncoding)
+    );
+
+    return outputEncoding === 'buffer' ? buffer : buffer.toString(outputEncoding);
+}
+
+/**
+ * 通用RSA解密函数
+ * @param {string|Buffer} encryptedData - 加密的数据
+ * @param {string} privateKey - 私钥(PEM格式)
+ * @param {string} inputEncoding - 输入编码格式：'base64', 'hex', 'buffer'，默认'base64'
+ * @param {string} outputEncoding - 输出编码，默认'utf8'
+ * @param {number} padding - 填充方式，默认RSA_PKCS1_PADDING
+ * @returns {string} 解密后的原始数据
+ */
+function rsaDecrypt(encryptedData, privateKey, inputEncoding = 'base64', outputEncoding = 'utf8', padding = crypto.constants.RSA_PKCS1_PADDING) {
+    let inputBuffer;
+
+    if (inputEncoding === 'buffer') {
+        inputBuffer = encryptedData;
+    } else {
+        inputBuffer = Buffer.from(encryptedData, inputEncoding);
+    }
+
+    const buffer = crypto.privateDecrypt(
+        {
+            key: privateKey,
+            padding: padding
+        },
+        inputBuffer
+    );
+
+    return buffer.toString(outputEncoding);
+}
+
+function hmacSHA256(data, key, inputEncoding = 'utf8') {
+    // 调整参数顺序：data, key（与网页的HmacSHA256(r, e)一致）
+    const hmac = crypto.createHmac('sha256', key);
+    hmac.update(data, inputEncoding);
+    return hmac.digest('base64');
+}
+
 function disclaimer() {
     console.log(`⚠️免责声明
 1. 本脚本中涉及的解锁解密分析脚本仅用于测试、学习和研究，禁止用于商业目的。 其合法性、准确性、完整性和有效性无法得到保证。 请根据实际情况作出自己的判断。
@@ -314,4 +374,7 @@ module.exports = {
     generateRandomUA: generateRandomUA, //生成随机UA,
     formatDate: formatDate, //格式化时间
     sha1: sha1, //sha1
+    rsaEncrypt: rsaEncrypt, // rsa加密
+    rsaDecrypt: rsaDecrypt, // rsa解密
+    hmacSHA256: hmacSHA256, //HMAC-SHA256签名
 };
