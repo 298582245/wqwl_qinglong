@@ -4,7 +4,7 @@
 /**
  * 脚本：wqwl_银鱼（通用版）.js
  * 作者：wqwlkj 裙：960690899
- * 描述：小程序：银鱼质亨
+ * 描述：小程序：银鱼质亨，不一定，搜索 银愉 关键字，橙色图标应该就是了
  * 环境变量：wqwl_yinyu，多个换行或新建多个变量
  * 环境变量描述：抓包headers下的Authori-zation和Form-type，格式auth1#type1#备注1
  * 代理变量：wqwl_daili（获取代理链接，需要返回txt格式的http/https）
@@ -108,6 +108,22 @@ const name = '微信小程序银鱼质亨'
                 }
                 this.auth = ckData[0];
                 this.type = ckData[1];
+                if (!/^[A-Za-z-]+$/.test(this.type)) {
+                    this.sendMessage(`⚠️没传正确的Form-type，使用默认值：routine-tuangou（提现失败请手动替换）`)
+                    this.type = 'routine-tuangou';
+                }
+                if (!this.auth.includes('Bearer'))
+                    this.auth = `Bearer ${this.auth}`
+                const jwtData = this.parseJWT(this.auth)
+                //  console.log(jwtData)
+                if (jwtData?.payload?.iss)
+                    this.baseUrl = `https://${jwtData?.payload?.iss}/api`
+                else if (jwtData?.payload?.aud)
+                    thies.baseUrl = `https://${jwtData?.payload?.aud}/api`
+                else
+                    this.sendMessage(`⚠️使用ck获取host，使用默认host：n03.sentezhenxuan.com`)
+                //console.log(this.baseUrl)
+                //'https://n03.sentezhenxuan.com/api'
                 this.headers = {
                     "Accept": "application/json",
                     "Accept-Encoding": "gzip, deflate, br",
@@ -145,10 +161,13 @@ const name = '微信小程序银鱼质亨'
                     //console.log(typeof res)
                     // res = this.JSONpare(res)
                     if (!res || !res.status == 200 || !Array.isArray(res.data)) {
-                        this.sendMessage(`❌获取视频列表失败:`, res?.msg || '未知错误', true);
+                        this.sendMessage(`❌获取视频列表失败:, ${res?.msg || '未知错误'} `, true);
                         this.videoIds = [];
+                        return false;
                     }
-                    this.videoIds = res.data.map(item => item.id).filter(id => typeof id === 'number');
+                    else {
+                        this.videoIds = res.data.map(item => item.id).filter(id => typeof id === 'number');
+                    }
                     return true;
                 }
                 catch (e) {
@@ -164,8 +183,9 @@ const name = '微信小程序银鱼质亨'
                     return this.sendMessage(`⚠️ 无视频可刷，跳过此步骤`)
                 try {
                     const total = this.videoIds.length;
-
-                    for (let i = 0; i < total; i++) {
+                    // console.log(this.videoIds)
+                    let i = 0
+                    for (; i < total; i++) {
                         const options = {
                             url: `${this.baseUrl}/video/videoJob`,
                             headers: this.headers,
@@ -184,7 +204,7 @@ const name = '微信小程序银鱼质亨'
 
                         //res = this.JSONpare(res)
                         if (res || res.status == 200) {
-                            this.sendMessage(`🎥视频 ${i + 1}/${total} 刷完 (ID: ${vid})`);
+                            this.sendMessage(`🎥视频 ${i + 1}/${total} 刷完 (ID: ${this.videoIds[i]})`);
                         } else {
                             this.sendMessage(`⚠️视频 ${i + 1}/${total} 异常:`, data?.msg || '无数据')
                         }
@@ -193,7 +213,7 @@ const name = '微信小程序银鱼质亨'
                     return true;
                 }
                 catch (e) {
-                    this.sendMessage(`❌视频 ${i + 1}/${total} 失败:，${e.message || e}`)
+                    this.sendMessage(`❌视频观看失败:，${e.message || e}`)
                     return false;
                 }
             }
@@ -234,6 +254,32 @@ const name = '微信小程序银鱼质亨'
                 if (!watchVideo) return;
                 this.sendMessage(`💳 正在尝试提现...`)
                 await this.doWithdraw()
+            }
+
+            // 手动解析 JWT（Base64 解码）
+            parseJWT(token) {
+                try {
+                    const cleanToken = token.replace('Bearer ', '');
+
+                    // JWT 由三部分组成：header.payload.signature
+                    const parts = cleanToken.split('.');
+                    if (parts.length !== 3) {
+                        throw new Error('无效的 JWT 格式');
+                    }
+
+                    // Base64Url 解码
+                    const header = JSON.parse(Buffer.from(parts[0], 'base64').toString());
+                    const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
+
+                    return {
+                        header,
+                        payload,
+                        signature: parts[2]
+                    };
+                } catch (error) {
+                    console.error('JWT 解析失败:', error.message);
+                    return null;
+                }
             }
 
             // 带重试机制的请求方法
