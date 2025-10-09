@@ -331,8 +331,58 @@ function rsaDecrypt(encryptedData, privateKey, inputEncoding = 'base64', outputE
     return buffer.toString(outputEncoding);
 }
 
+
+async function findTypes(targetName) {
+    const config = {
+        method: 'get',
+        url: `https://gitee.com/cobbWmy/img/raw/staticApi/type.json`
+    };
+
+    let retries = 3;
+    let lastError;
+
+    let types = []; // 改为数组存储多个分类
+
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            const response = await axios(config);
+            const data = response.data;
+
+            // 清空之前的查找结果
+            types = [];
+
+            // 在返回的数据中查找目标name所属的所有分类
+            for (const [category, items] of Object.entries(data)) {
+                const found = items.find(item => item.name === targetName);
+                if (found) {
+                    types.push(category);
+                }
+            }
+
+            // 如果找到了分类，就跳出重试循环
+            break;
+
+        } catch (error) {
+            lastError = error;
+            console.error(`🔐获取分类数据失败，正在重试... (${attempt}/${retries})`);
+
+            if (attempt < retries) {
+                // 等待一段时间再重试
+                await new Promise(resolve => setTimeout(resolve, 3000 * attempt));
+            }
+        }
+    }
+
+    // 如果没有找到任何分类，返回"其他"
+    if (types.length === 0) {
+        return "其他";
+    }
+
+    // 如果找到多个分类，用"+"连接
+    return types.join('+');
+}
+
 function hmacSHA256(data, key, inputEncoding = 'utf8') {
-    // 调整参数顺序：data, key（与网页的HmacSHA256(r, e)一致）
     const hmac = crypto.createHmac('sha256', key);
     hmac.update(data, inputEncoding);
     return hmac.digest('base64');
@@ -354,6 +404,7 @@ function disclaimer() {
 ⚠️⚠️⚠️使用代理时，必须安装依赖：https-proxy-agent
 ⚠️⚠️⚠️使用代理时，必须安装依赖：https-proxy-agent
 ⚠️⚠️⚠️使用代理时，必须安装依赖：https-proxy-agent
+============================\n
         `)
 }
 
@@ -377,4 +428,5 @@ module.exports = {
     rsaEncrypt: rsaEncrypt, // rsa加密
     rsaDecrypt: rsaDecrypt, // rsa解密
     hmacSHA256: hmacSHA256, //HMAC-SHA256签名
+    findTypes: findTypes, //脚本分类
 };
