@@ -72,7 +72,13 @@ const name = '微信小程序银鱼质亨'
     // 确保 require 成功后才继续执行
     try {
         wqwlkj.disclaimer();
-
+        if (typeof wqwlkj.findTypes == "function") {
+            let type = await wqwlkj.findTypes(name);
+            console.log(`============================
+🚀 当前脚本：${name} 🚀
+📂 所属分类：${type} 📂
+============================\n`)
+        }
         let notify;
         if (isNotify) {
             try {
@@ -101,7 +107,7 @@ const name = '微信小程序银鱼质亨'
                     return false;
                 }
                 else if (ckData.length === 2) {
-                    this.remark = `${ckData[0].slice(0, 8)}-${index}`;
+                    this.remark = `${ckData[0].slice(0, 8)}-${this.index}`;
                 }
                 else {
                     this.remark = ckData[2];
