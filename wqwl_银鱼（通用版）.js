@@ -14,6 +14,20 @@
 //本代码是基于网上的代码使用AI进行修改
 //外面的脚本提现失败就是他的Form-type跟你的不同，换成自己的就好了
 
+/**
+ * 提示提现失败的，找到能手动提现的小程序，填入他的Form-type和对应ck
+ * 各个小程序的ck互通（前提你得去过对应小程序登录过）下面列出一些收集的（哪个小程序忘记了）
+ * routine-jylantian
+ * routine-yipin
+ * routine-zhixiang
+ * routine-shenghuo
+ * routine-jiangxuan
+ * routine-tuangou
+ */
+
+
+//如果没有视频，改成你有的
+const VIDEO_FROM_TYPE = "routine-zhixiang"
 
 
 const axios = require('axios');
@@ -136,7 +150,7 @@ const name = '微信小程序银鱼质亨'
                     "Content-Type": "application/json",
                     "Connection": "keep-alive",
                     "Referer": "https://servicewechat.com/wx5b82dfe3747e533f/5/page-frame.html",
-                    "Host": "n03.sentezhenxuan.com",
+                    "Host": "n05.sentezhenxuan.com",
                     "Authori-zation": this.auth,
                     "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.50 NetType/WIFI Language/zh_CN",
                     "Cb-lang": "zh-CN",
@@ -157,9 +171,11 @@ const name = '微信小程序银鱼质亨'
 
             async getVideoIds() {
                 try {
+                    const headers = JSON.parse(JSON.stringify(this.headers))
+                    headers['Form-type'] = VIDEO_FROM_TYPE
                     const options = {
                         url: `${this.baseUrl}/video/list?page=1&limit=10&status=1&source=0&isXn=1`,
-                        headers: this.headers,
+                        headers: headers,
                         method: 'GET',
                     }
                     let res = await this.request(options);
@@ -210,7 +226,8 @@ const name = '微信小程序银鱼质亨'
 
                         //res = this.JSONpare(res)
                         if (res || res.status == 200) {
-                            this.sendMessage(`🎥视频 ${i + 1}/${total} 刷完 (ID: ${this.videoIds[i]})`);
+
+                            this.sendMessage(`🎥视频 ${i + 1}/${total} 刷完 (ID: ${this.videoIds[i]})`, i + 1 === total);
                         } else {
                             this.sendMessage(`⚠️视频 ${i + 1}/${total} 异常:`, data?.msg || '无数据')
                         }
@@ -237,14 +254,14 @@ const name = '微信小程序银鱼质亨'
                     let res = await this.request(options);
                     //res = this.JSONpare(res)
                     if (res.code === 200 || res.status === 200) {
-                        this.sendMessage(`💰 提现成功:, ${res.msg || '成功'} `, true);
+                        this.sendMessage(`💰 提现发起成功，接口返回: ${res.msg || '成功'} `, true);
                     } else {
-                        this.sendMessage(`❌提现失败，${res.msg}`, true)
+                        this.sendMessage(`❌ 提现发起失败，接口返回: ${res.msg}`, true)
                     }
 
                 }
                 catch (e) {
-                    this.sendMessage(`❌提现请求失败:，${e.message || e}`)
+                    this.sendMessage(`❌ 提现请求失败:，${e.message || e}`)
                     return false;
                 }
             }
