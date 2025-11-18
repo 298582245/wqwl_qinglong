@@ -6,28 +6,32 @@
  * 作者：wqwlkj 裙：960690899
  * 描述：小程序：银鱼质亨，不一定，搜索 银愉 关键字，橙色图标应该就是了
  * 环境变量：wqwl_yinyu，多个换行或新建多个变量
- * 环境变量描述：抓包headers下的Authori-zation和Form-type，格式auth1#type1#备注1
+ * 环境变量描述：抓包能提现的小程序的headers下的Authori-zation和Form-type，这里要的是能提现的Form-type，格式auth1#type1#备注1
  * 代理变量：wqwl_daili（获取代理链接，需要返回txt格式的http/https）
- * cron: 一天一次
+ * cron: 15 0 0,23 * * *
  */
 
-//本代码是基于网上的代码使用AI进行修改
-//外面的脚本提现失败就是他的Form-type跟你的不同，换成自己的就好了
 
 /**
- * 提示提现失败的，找到能手动提现的小程序，填入他的Form-type和对应ck
- * 各个小程序的ck互通（前提你得去过对应小程序登录过）下面列出一些收集的（哪个小程序忘记了）
- * routine-jylantian
- * routine-yipin
- * routine-zhixiang
- * routine-shenghuo
- * routine-jiangxuan
- * routine-tuangou
+ * 各个小程序之间的ck是互通的，小程序用越新的越好。
+ * ⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️
+ * ⚠️1. 如果没有你能获取视频的route,请自行添加到VIDEO_FROM_TYPES. ⚠️
+ * ⚠️2. 提示提现失败的,找到能手动提现的小程序,填入他的Form-type.   ⚠️
+ * ⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️
  */
 
 
-//如果没有视频，改成你有的
-const VIDEO_FROM_TYPE = "routine-zhixiang"
+//如果没有你能获取视频的route，请自行添加到VIDEO_FROM_TYPES
+//路由列表，多个循环尝试获取视频列表，可自行添加，已经远程获取，如果有不同，可以联系提供：远程数据地址https://gitee.com/cobbWmy/img/raw/staticApi/data/%E9%93%B6%E9%B1%BCroute.json
+let VIDEO_FROM_TYPES = [
+    "routine-zhixiang",
+    "routine-jylantian",
+    "routine-yipin",
+    "routine-zhixiang",
+    "routine-shenghuo",
+    "routine-jiangxuan",
+    "routine-tuangou"
+]
 
 
 const axios = require('axios');
@@ -57,6 +61,42 @@ const ckName = 'wqwl_yinyu';
 //脚本名称
 const name = '微信小程序银鱼质亨'
 
+
+//银鱼专属方法
+async function getVideoRoute() {
+    const config = {
+        method: 'get',
+        url: `https://gitee.com/cobbWmy/img/raw/staticApi/data/%E9%93%B6%E9%B1%BCroute.json`
+    };
+    try {
+        const res = await axios(config)
+        const data = res.data
+        if (typeof data === 'string') {
+            try {
+                data = JSON.parse(data);
+            } catch (parseError) {
+                // console.log("获取远程route配置失败，使用默认配置")
+            }
+        }
+        if (Array.isArray(data)) {
+            // 找出data中存在但VIDEO_FROM_TYPES中不存在的元素
+            const newItems = data.filter(item => !VIDEO_FROM_TYPES.includes(item));
+
+            // 将新的元素追加到原数组后面
+            VIDEO_FROM_TYPES = VIDEO_FROM_TYPES.concat(newItems);
+            console.log(`✅ 成功获取远程route配置,目前共【${VIDEO_FROM_TYPES.length}】个route`);
+        }
+        else {
+            console.log("❌ 获取远程route配置失败，使用默认配置")
+        }
+
+    }
+    catch (e) {
+        console.log("❌ 获取远程route配置失败，使用默认配置")
+
+    }
+
+}
 
 !(async function () {
     let wqwlkj;
@@ -103,8 +143,9 @@ const name = '微信小程序银鱼质亨'
                 notify = null
             }
         }
+        await getVideoRoute()
 
-        //let fileData = wqwlkj.readFile('yinyu')
+        let fileData = wqwlkj.readFile('yinyu')
         class Task {
             constructor(ck) {
                 this.index = index++;
@@ -112,6 +153,7 @@ const name = '微信小程序银鱼质亨'
                 this.baseUrl = 'https://n03.sentezhenxuan.com/api'
                 this.maxRetries = 3; // 最大重试次数
                 this.retryDelay = 3; // 重试延迟(秒)
+                this.money = 0;
 
             }
             async init() {
@@ -132,6 +174,19 @@ const name = '微信小程序银鱼质亨'
                     this.sendMessage(`⚠️没传正确的Form-type，使用默认值：routine-tuangou（提现失败请手动替换）`)
                     this.type = 'routine-tuangou';
                 }
+                if (!VIDEO_FROM_TYPES.includes(this.type))
+                    VIDEO_FROM_TYPES.unshift(this.type)
+                if (!fileData[this.remark])
+                    fileData[this.remark] = this.type
+
+                //优先使用缓存route
+                const targetValue = fileData[this.remark]
+                const index = VIDEO_FROM_TYPES.indexOf(targetValue)
+                if (index > -1) {
+                    VIDEO_FROM_TYPES.splice(index, 1)
+                }
+                VIDEO_FROM_TYPES.unshift(targetValue)
+
                 if (!this.auth.includes('Bearer'))
                     this.auth = `Bearer ${this.auth}`
                 const jwtData = this.parseJWT(this.auth)
@@ -139,7 +194,7 @@ const name = '微信小程序银鱼质亨'
                 if (jwtData?.payload?.iss)
                     this.baseUrl = `https://${jwtData?.payload?.iss}/api`
                 else if (jwtData?.payload?.aud)
-                    thies.baseUrl = `https://${jwtData?.payload?.aud}/api`
+                    this.baseUrl = `https://${jwtData?.payload?.aud}/api`
                 else
                     this.sendMessage(`⚠️使用ck获取host，使用默认host：n03.sentezhenxuan.com`)
                 //console.log(this.baseUrl)
@@ -168,37 +223,48 @@ const name = '微信小程序银鱼质亨'
                 }
                 return true
             }
-
             async getVideoIds() {
                 try {
                     const headers = JSON.parse(JSON.stringify(this.headers))
-                    headers['Form-type'] = VIDEO_FROM_TYPE
-                    const options = {
-                        url: `${this.baseUrl}/video/list?page=1&limit=10&status=1&source=0&isXn=1`,
-                        headers: headers,
-                        method: 'GET',
+                    //headers['Form-type'] = VIDEO_FROM_TYPES
+
+                    // 循环请求所有路由
+                    for (const route of VIDEO_FROM_TYPES) {
+                        this.sendMessage(`🎯 尝试使用${route}获取视频`)
+                        headers['Form-type'] = route
+                        const options = {
+                            url: `${this.baseUrl}/video/list?page=1&limit=10&status=1&source=0&isXn=1`,
+                            headers: headers,
+                            method: 'GET',
+                        }
+
+                        let res = await this.request(options);
+
+                        if (res && res.status === 200 && Array.isArray(res.data) && res.data.length > 0) {
+                            this.sendMessage(`✅ 使用${route}获取视频列表成功`)
+                            // 找到有数据的路由，提取videoIds并返回
+                            this.videoIds = res.data.map(item => item.id).filter(id => typeof id === 'number');
+                            //用作缓存
+                            fileData[this.remark] = route;
+                            return true;
+                        }
+                        this.sendMessage(`⚠️ 使用${route}获取视频为空，切换下一个路由`)
+                        await wqwlkj.sleep(1)
+
+
+                        // 如果是最后一个路由且没有数据，继续执行到循环结束
                     }
-                    let res = await this.request(options);
-                    //  console.log(res)
-                    //console.log(typeof res)
-                    // res = this.JSONpare(res)
-                    if (!res || !res.status == 200 || !Array.isArray(res.data)) {
-                        this.sendMessage(`❌获取视频列表失败:, ${res?.msg || '未知错误'} `, true);
-                        this.videoIds = [];
-                        return false;
-                    }
-                    else {
-                        this.videoIds = res.data.map(item => item.id).filter(id => typeof id === 'number');
-                    }
+
+                    // 所有路由都没有数据
+                    this.videoIds = [];
                     return true;
-                }
-                catch (e) {
+
+                } catch (e) {
                     this.sendMessage(`❌获取视频id请求失败，${e.message}`)
                     this.videoIds = [];
                     return false;
                 }
             }
-
 
             async watchVideos() {
                 if (this.videoIds.length <= 0)
@@ -227,22 +293,53 @@ const name = '微信小程序银鱼质亨'
                         //res = this.JSONpare(res)
                         if (res || res.status == 200) {
 
-                            this.sendMessage(`🎥视频 ${i + 1}/${total} 刷完 (ID: ${this.videoIds[i]})`, i + 1 === total);
+                            this.sendMessage(`🎥 视频 ${i + 1}/${total} 刷完 (ID: ${this.videoIds[i]})`, i + 1 === total);
                         } else {
-                            this.sendMessage(`⚠️视频 ${i + 1}/${total} 异常:`, data?.msg || '无数据')
+                            this.sendMessage(`⚠️ 视频 ${i + 1}/${total} 异常:`, data?.msg || '无数据')
                         }
                         await wqwlkj.sleep(wqwlkj.getRandom(1, 3))
                     }
                     return true;
                 }
                 catch (e) {
-                    this.sendMessage(`❌视频观看失败:，${e.message || e}`)
+                    this.sendMessage(`❌ 视频观看失败:，${e.message || e}`)
+                    return false;
+                }
+            }
+
+            async getMoney() {
+                try {
+                    const options = {
+                        url: `${this.baseUrl}/user`,
+                        headers: this.headers,
+                        method: 'GET',
+                    }
+
+                    let res = await this.request(options);
+                    if (res?.status == 200) {
+                        const money = res?.data?.now_money
+                        if (money) {
+                            this.sendMessage(`✅ 获取余额成功，当前余额：${money}`)
+                            this.money = money
+                        } else {
+                            this.sendMessage(`❌ 获取余额失败:${res?.msg || "未知原因"}`)
+                        }
+                    } else {
+                        this.sendMessage(`❌ 获取余额失败:${res?.msg || "未知原因"}`)
+                    }
+
+                }
+                catch (e) {
+                    this.sendMessage(`❌ 获取余额请求失败:，${e.message || e}`)
                     return false;
                 }
             }
 
             async doWithdraw() {
                 try {
+                    await this.getMoney()
+                    if (this.money < 0.1)
+                        return this.sendMessage(`⚠️余额不足0.1，直接跳出提现`)
                     const header = JSON.parse(JSON.stringify(this.headers))
                     header['Accept-Language'] = "zh-CN,zh;q=0.9";
                     header['User-Agent'] = "Mozilla/5.0 (iPhone; CPU iPhone OS 15_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.50(0x1800323d) NetType/WIFI Language/zh_CN"
@@ -333,14 +430,14 @@ const name = '微信小程序银鱼质亨'
                     return data;
 
                 } catch (error) {
-                    this.sendMessage(`🔐检测到请求发生错误，正在重试...`)
+                    this.sendMessage(`🔐 检测到请求发生错误，正在重试...`)
                     let newProxy;
                     if (isProxy) {
                         newProxy = await wqwlkj.getProxy(this.index, proxy);
                         this.proxy = newProxy
-                        this.sendMessage(`✅代理更新成功:${this.proxy}`);
+                        this.sendMessage(`✅ 代理更新成功:${this.proxy}`);
                     } else {
-                        this.sendMessage(`⚠️未使用代理`);
+                        this.sendMessage(`⚠️ 未使用代理`);
                         newProxy = true
                     }
 
@@ -350,7 +447,7 @@ const name = '微信小程序银鱼质亨'
                         return await this.request(options, retryCount + 1);
                     }
 
-                    throw new Error(`❌请求最终失败: ${error.message}`);
+                    throw new Error(`❌ 请求最终失败: ${error.message}`);
                 }
             }
 
@@ -393,7 +490,7 @@ const name = '微信小程序银鱼质亨'
 
             await wqwlkj.sleep(wqwlkj.getRandom(3, 5));
         }
-        // wqwlkj.saveFile(fileData, 'yinyu')
+        wqwlkj.saveFile(fileData, 'yinyu')
         console.log(`${name}全部任务已完成！`);
 
         const message = wqwlkj.getMessage()
