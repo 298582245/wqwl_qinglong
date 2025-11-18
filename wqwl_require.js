@@ -4,14 +4,13 @@ const path = require('path');
 const axios = require('axios');
 const https = require('https');
 const { constants } = require('crypto');
-//const { console } = require('inspector');
 let message = "";
 //获取环境变量
 function checkEnv(userCookie) {
     try {
         if (!userCookie || userCookie === "" || userCookie === undefined || userCookie === "undefined" || userCookie === null || userCookie === "null") {
-            console.log("没配置环境变量就要跑脚本啊！！！");
-            console.log("🔔还没开始已经结束!");
+            console.log("🔔 没配置环境变量就要跑脚本啊！！！");
+            console.log("🔔 还没开始已经结束!");
             process.exit(1);
         }
         const envSplitor = ["&", "\n"];
@@ -20,15 +19,15 @@ function checkEnv(userCookie) {
             .split(envSplitor.find((o) => userCookie.includes(o)) || "&")
             .filter((n) => n);
         if (!userList || userList.length === 0) {
-            console.log("没配置环境变量就要跑脚本啊！！！");
-            console.log("🔔还没开始已经结束!");
+            console.log("🔔 没配置环境变量就要跑脚本啊！！！");
+            console.log("🔔 还没开始已经结束!");
             process.exit(1);
         }
 
-        console.log(`✅共找到${userList.length}个账号`);
+        console.log(`✅ 共找到${userList.length}个账号`);
         return userList;
     } catch (e) {
-        console.log("环境变量格式错误,下面是报错信息")
+        console.log("🔔 环境变量格式错误,下面是报错信息")
         console.log(e);
     }
 }
@@ -104,10 +103,10 @@ async function request(options, proxy = '') {
                 const { HttpsProxyAgent } = require('https-proxy-agent');
                 agent = new HttpsProxyAgent(`http://${proxy}`);
             } else {
-                console.log('⚠️https-proxy-agent 模块未安装，将不使用代理');
+                console.log('⚠️ https-proxy-agent 模块未安装，将不使用代理');
             }
         } catch (e) {
-            console.log(`创建代理代理失败❌: ${e.message}`)
+            console.log(`❌ 创建代理代理失败: ${e.message}`)
         }
     }
 
@@ -142,7 +141,7 @@ async function getProxy(index, url) {
             return response.data.trim(); // 返回代理 IP:端口
         } catch (error) {
             lastError = error;
-            console.error(`账号[${index + 1}]：🔐获取代理失败，正在重试...`);
+            console.error(`账号[${index + 1}]：🔐 获取代理失败，正在重试...`);
 
             if (attempt < retries) {
                 // 等待一段时间再重试（可选）
@@ -364,7 +363,7 @@ async function findTypes(targetName) {
 
         } catch (error) {
             lastError = error;
-            console.error(`🔐获取分类数据失败，正在重试... (${attempt}/${retries})`);
+            console.error(`🔐 获取分类数据失败，正在重试... (${attempt}/${retries})`);
 
             if (attempt < retries) {
                 // 等待一段时间再重试
@@ -382,14 +381,274 @@ async function findTypes(targetName) {
     return types.join('+');
 }
 
+async function newFindTypes(targetName) {
+    const config = {
+        method: 'get',
+        url: `https://gitee.com/cobbWmy/img/raw/staticApi/type.json`
+    };
+
+    let retries = 3;
+    let lastError;
+
+    let types = [];
+    let remoteVersion = "未知";
+
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            const response = await axios(config);
+            const data = response.data;
+
+            types = [];
+            remoteVersion = "未知";
+
+            // 在返回的数据中查找目标name所属的所有分类和版本
+            for (const [category, items] of Object.entries(data)) {
+                const found = items.find(item => item.name === targetName);
+                if (found) {
+                    types.push(category);
+                    // 获取版本号，如果没有版本号就返回"其他"
+                    if (found.version) {
+                        remoteVersion = found.version;
+                    } else {
+                        remoteVersion = "其他";
+                    }
+                }
+            }
+
+            break;
+
+        } catch (error) {
+            lastError = error;
+            console.error(`🔐 获取分类数据失败，正在重试... (${attempt}/${retries})`);
+
+            if (attempt < retries) {
+                await new Promise(resolve => setTimeout(resolve, 3000 * attempt));
+            }
+        }
+    }
+
+    // 如果没有找到任何分类，返回"其他"
+    if (types.length === 0) {
+        return {
+            type: "其他",
+            version: "其他"
+        };
+    }
+
+    // 返回对象
+    return {
+        type: types.join('+'),
+        version: remoteVersion
+    };
+}
+
 function hmacSHA256(data, key, inputEncoding = 'utf8') {
     const hmac = crypto.createHmac('sha256', key);
     hmac.update(data, inputEncoding);
     return hmac.digest('base64');
 }
 
+//基础模板类，
+class WQWLBase {
+    constructor(wqwlkj, ckName, scriptName, version, isNeedFile, proxy, isProxy, bfs, isNotify, isDebug) {
+        this.wqwlkj = wqwlkj;
+        this.ckName = ckName;
+        this.scriptName = scriptName;
+        this.version = version || 1.0;
+        this.isNeedFile = isNeedFile || false;
+        this.proxyUrl = proxy || process.env["wqwl_daili"] || '';
+        this.isProxy = isProxy || process.env["wqwl_useProxy"] || false;
+        this.bfs = bfs || process.env["wqwl_bfs"] || 4;
+        this.isNotify = isNotify || process.env["wqwl_isNotify"] || true;
+        this.isDebug = isDebug || process.env["wqwl_isDebug"] || false;
+        this.index = 0;
+        this.sendText = ''
+        this.lock = false;//发消息的锁，没法了
+    }
+
+    async initFramework() {
+        try {
+            this.wqwlkj.disclaimer();
+            let typeData = await this.wqwlkj.newFindTypes(this.scriptName);
+            console.log(`============================
+🚀 当前脚本：${this.scriptName} 🚀
+📂 所属分类：${typeData.type} 📂
+🔄 本地版本：V${this.version}，远程版本：V${typeData.version} 🔄${this.version < typeData.version ? "\n🚨 当前非最新版本，如未能使用请及时更新！ 🚨" : ""}
+============================\n`);
+            if (this.isNeedFile)
+                this.fileData = this.wqwlkj.readFile(this.scriptName)
+
+            return true;
+        } catch (e) {
+            console.error('❌ 初始化框架失败:', e.message);
+            return false;
+        }
+    }
+
+    async runTasks(TaskClass) {
+        if (!await this.initFramework()) return;
+
+        let notify;
+        if (this.isNotify) {
+            try {
+                notify = require('./sendNotify');
+                console.log('✅加载发送通知模块成功');
+            } catch (e) {
+                console.log('❌加载发送通知模块失败');
+                notify = null;
+            }
+        }
+
+        console.log(`🚀 ${this.scriptName}开始执行...`);
+        const tokens = this.wqwlkj.checkEnv(process.env[this.ckName]);
+        const totalBatches = Math.ceil(tokens.length / this.bfs);
+
+        for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+            const start = batchIndex * this.bfs;
+            const end = start + this.bfs;
+            const batch = tokens.slice(start, end);
+
+            console.log(`▶️ 开始执行第 ${batchIndex + 1} 批任务 (${start + 1}-${Math.min(end, tokens.length)})`);
+
+            const taskInstances = batch.map(token => new TaskClass(token, this.index++, this));
+            const tasks = taskInstances.map(instance => instance.main());
+            const results = await Promise.allSettled(tasks);
+
+            results.forEach((result, index) => {
+                const task = taskInstances[index];
+                if (result.status === 'rejected') {
+                    task.sendMessage(result.reason);
+                }
+            });
+
+            await this.wqwlkj.sleep(this.wqwlkj.getRandom(3, 5));
+        }
+        if (this.fileData)
+            this.wqwlkj.saveFile(this.fileData, this.scriptName)
+        console.log(`🎉 ${this.scriptName}全部任务已完成！`);
+        if (this.sendText !== '' && this.isNotify === true && notify) {
+            await notify.sendNotify(`${this.scriptName} `, `${this.sendText} `);
+        }
+        else {
+            console.log('未开启推送或者无消息可推送')
+        }
+    }
+    async sendMessage(msg, isPush = false) {
+        // 等待锁释放
+        while (this.lock) {
+            await new Promise(resolve => setTimeout(resolve, 10));
+        }
+
+        this.lock = true;
+        try {
+            if (isPush) {
+                //console.log("本消息进行推送");
+                this.sendText += msg + "\n";
+                msg = `${msg} 🚀[push]`
+                //console.log(`[DEBUG] 调用后sendText: "${this.sendText}"`);
+            }
+            console.log(msg);
+        } finally {
+            this.lock = false;
+        }
+    }
+}
+//基础任务类
+class WQWLBaseTask {
+    constructor(token, index, base) {
+        this.ck = token;
+        this.index = index;
+        this.base = base;
+        this.proxy = ''
+        this.maxRetries = 3;
+        this.retryDelay = 3;
+    }
+
+    async init() {
+        // 由子类实现
+        return true;
+    }
+
+    async main() {
+        // 由子类实现
+    }
+
+    async request(options, retryCount = 0) {
+        try {
+            if (this.base.proxyUrl && this.base.isProxy && this.proxy == '') {
+                this.proxy = await wqwlkj.getProxy(this.index, this.base.proxyUrl)
+                //console.log(`使用代理：${this.proxy}`)
+                this.sendMessage(`✅使用代理：${this.proxy}`)
+            }
+            const data = await this.base.wqwlkj.request(options, this.proxy);
+
+            if (this.base.isDebug) {
+                if (this.base.isDebug === 2)
+                    console.log(JSON.stringify(options))
+                const formatData = (data) => {
+                    if (data === null) return 'null';
+                    if (data === undefined) return 'undefined';
+
+                    if (typeof data === 'string') return data;
+                    if (typeof data === 'object') {
+                        try {
+                            return JSON.stringify(data, null, 2);
+                        } catch (error) {
+                            return `[对象序列化失败: ${error.message}]`;
+                        }
+                    }
+
+                    return String(data);
+                };
+
+                this.sendMessage(`[调试输出] ${options?.method}请求${options?.url}返回：${formatData(data)}`);
+            }
+            return data;
+
+        } catch (error) {
+            this.sendMessage(`🔐 检测到请求发生错误，正在重试...`);
+            console.log(error)
+            let newProxy;
+            if (this.base.isProxy) {
+                newProxy = await wqwlkj.getProxy(this.index, this.base.proxyUrl)
+                this.proxy = newProxy;
+                this.sendMessage(`✅ 代理更新成功:${this.proxy}`);
+            } else {
+                this.sendMessage(`⚠️ 未使用代理`);
+                newProxy = true;
+            }
+
+            if (retryCount < this.maxRetries && newProxy) {
+                this.sendMessage(`🕒 ${this.retryDelay * (retryCount + 1)}s秒后重试...`);
+                await this.base.wqwlkj.sleep(this.retryDelay * (retryCount + 1));
+                return await this.request(options, retryCount + 1);
+            }
+
+            throw new Error(`❌ 请求最终失败: ${error.message}`);
+        }
+    }
+
+    async safeExecute(fn, methodName = '') {
+        try {
+            const result = await fn();
+            return result;
+        } catch (e) {
+            if (this.sendMessage) {
+                this.sendMessage(`❌ [${methodName}] 执行失败,原因: ${e.message || e || "未知原因"}`, true);
+            }
+            return false;
+        }
+    }
+
+
+    sendMessage(message, isPush = false) {
+        message = `账号[${this.index + 1}](${this.remark}): ${message}`;
+        return this.base.sendMessage(message, isPush);
+    }
+}
+
 function disclaimer() {
-    console.log(`⚠️免责声明
+    console.log(`⚠️ 免责声明
 1. 本脚本中涉及的解锁解密分析脚本仅用于测试、学习和研究，禁止用于商业目的。 其合法性、准确性、完整性和有效性无法得到保证。 请根据实际情况作出自己的判断。
 2. 禁止任何官方账号或自媒体以任何形式复制或发布本项目中的所有资源文件。
 3. 本脚本不负责任何脚本问题，包括但不限于任何脚本错误导致的任何损失或损坏。
@@ -429,4 +688,8 @@ module.exports = {
     rsaDecrypt: rsaDecrypt, // rsa解密
     hmacSHA256: hmacSHA256, //HMAC-SHA256签名
     findTypes: findTypes, //脚本分类
+
+    newFindTypes: newFindTypes, //新版寻找分类
+    WQWLBase: WQWLBase, // 基础模板类
+    WQWLBaseTask: WQWLBaseTask //基础任务类
 };
