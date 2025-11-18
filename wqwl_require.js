@@ -526,11 +526,13 @@ class WQWLBase {
         if (this.fileData)
             this.wqwlkj.saveFile(this.fileData, this.scriptName)
         console.log(`🎉 ${this.scriptName}全部任务已完成！`);
+
         if (this.sendText !== '' && this.isNotify === true && notify) {
-            await notify.sendNotify(`${this.scriptName} `, `${this.sendText} `);
+            const message = this.formatAccountLogs(this.sendText)
+            await notify.sendNotify(`${this.scriptName} `, `${message} `);
         }
         else {
-            console.log('未开启推送或者无消息可推送')
+            console.log('⚠️ 未开启推送或者无消息可推送')
         }
     }
     async sendMessage(msg, isPush = false) {
@@ -551,6 +553,46 @@ class WQWLBase {
         } finally {
             this.lock = false;
         }
+    }
+
+    formatAccountLogs(msg) {
+        const lines = msg.split('\n').filter(line => line.trim() !== '');
+
+        // 按账号分组
+        const accountGroups = {};
+
+        lines.forEach(line => {
+            const accountMatch = line.match(/账号\[(\d+)\]\(([^)]+)\):(.+)/);
+            if (accountMatch) {
+                const accountKey = `账号[${accountMatch[1]}](${accountMatch[2]})`;
+                const content = accountMatch[3].trim();
+
+                if (!accountGroups[accountKey]) {
+                    accountGroups[accountKey] = [];
+                }
+
+                accountGroups[accountKey].push(content);
+            }
+        });
+
+        // 按账号编号排序
+        const sortedAccounts = Object.keys(accountGroups).sort((a, b) => {
+            const numA = parseInt(a.match(/\[(\d+)\]/)[1]);
+            const numB = parseInt(b.match(/\[(\d+)\]/)[1]);
+            return numA - numB;
+        });
+
+        // 生成格式化后的日志
+        const formattedLines = [];
+        sortedAccounts.forEach(accountKey => {
+            formattedLines.push(`${accountKey}:`);
+            accountGroups[accountKey].forEach(content => {
+                formattedLines.push(`  ↳ ${content}`);
+            });
+            formattedLines.push(''); // 空行分隔不同账号
+        });
+
+        return formattedLines.join('\n').trim();
     }
 }
 //基础任务类
