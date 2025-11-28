@@ -535,7 +535,7 @@ class WQWLBase {
             console.log('⚠️ 未开启推送或者无消息可推送')
         }
     }
-    async sendMessage(msg, isPush = false) {
+    async sendMessage(msg, isPush = false, isNeedTimes = false) {
         // 等待锁释放
         while (this.lock) {
             await new Promise(resolve => setTimeout(resolve, 10));
@@ -545,6 +545,8 @@ class WQWLBase {
         try {
             if (isPush) {
                 //console.log("本消息进行推送");
+                if (isNeedTimes)
+                    msg = `[${this.getDateDetail()}] ${msg}`
                 this.sendText += msg + "\n";
                 msg = `${msg} 🚀[push]`
                 //console.log(`[DEBUG] 调用后sendText: "${this.sendText}"`);
@@ -553,6 +555,20 @@ class WQWLBase {
         } finally {
             this.lock = false;
         }
+    }
+
+    getDateDetail() {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        const seconds = String(now.getSeconds()).padStart(2, '0');
+        const milliseconds = String(now.getMilliseconds()).padStart(3, '0');
+
+        const formattedTime = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${milliseconds}`
+        return formattedTime;
     }
 
     formatAccountLogs(msg) {
@@ -683,9 +699,9 @@ class WQWLBaseTask {
     }
 
 
-    sendMessage(message, isPush = false) {
+    sendMessage(message, isPush = false, isNeedTimes = false) {
         message = `账号[${this.index + 1}](${this.remark}): ${message}`;
-        return this.base.sendMessage(message, isPush);
+        return this.base.sendMessage(message, isPush, isNeedTimes);
     }
 }
 
