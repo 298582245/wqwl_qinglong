@@ -392,6 +392,7 @@ async function newFindTypes(targetName) {
 
     let types = [];
     let remoteVersion = "未知";
+    let remoteUrl = '';
 
     for (let attempt = 1; attempt <= retries; attempt++) {
         try {
@@ -400,6 +401,7 @@ async function newFindTypes(targetName) {
 
             types = [];
             remoteVersion = "未知";
+            remoteUrl = '';
 
             // 在返回的数据中查找目标name所属的所有分类和版本
             for (const [category, items] of Object.entries(data)) {
@@ -411,6 +413,9 @@ async function newFindTypes(targetName) {
                         remoteVersion = found.version;
                     } else {
                         remoteVersion = "其他";
+                    }
+                    if (found.url) {
+                        remoteUrl = found.url;
                     }
                 }
             }
@@ -431,14 +436,16 @@ async function newFindTypes(targetName) {
     if (types.length === 0) {
         return {
             type: "其他",
-            version: "其他"
+            version: "其他",
+            url: ''
         };
     }
 
     // 返回对象
     return {
         type: types.join('+'),
-        version: remoteVersion
+        version: remoteVersion,
+        url: remoteUrl
     };
 }
 
@@ -450,7 +457,7 @@ function hmacSHA256(data, key, inputEncoding = 'utf8') {
 
 //基础模板类，
 class WQWLBase {
-    constructor(wqwlkj, ckName, scriptName, version, isNeedFile, proxy, isProxy, bfs, isNotify, isDebug) {
+    constructor(wqwlkj, ckName, scriptName, version, isNeedFile, proxy, isProxy, bfs, isNotify, isDebug, isNeedTimes = false) {
         this.wqwlkj = wqwlkj;
         this.ckName = ckName;
         this.scriptName = scriptName;
@@ -464,6 +471,7 @@ class WQWLBase {
         this.index = 0;
         this.sendText = ''
         this.lock = false;//发消息的锁，没法了
+        this.isNeedTimes = isNeedTimes;
     }
 
     async initFramework() {
@@ -473,7 +481,7 @@ class WQWLBase {
             console.log(`============================
 🚀 当前脚本：${this.scriptName} 🚀
 📂 所属分类：${typeData.type} 📂
-🔄 本地版本：V${this.version}，远程版本：V${typeData.version} 🔄${this.version < typeData.version ? "\n🚨 当前非最新版本，如未能使用请及时更新！ 🚨" : ""}
+🔄 本地版本：V${this.version}，远程版本：V${typeData.version} 🔄${this.version < typeData.version ? `\n🚨 当前非最新版本，如未能使用请及时更新！ 🚨\n🔗 更新地址：${typeData?.url} 🔗` : ""}
 ============================\n`);
             if (this.isNeedFile)
                 this.fileData = this.wqwlkj.readFile(this.scriptName)
@@ -529,13 +537,15 @@ class WQWLBase {
 
         if (this.sendText !== '' && this.isNotify === true && notify) {
             const message = this.formatAccountLogs(this.sendText)
+            console.log(`\n推送消息汇总：\n`)
+            console.log(message)
             await notify.sendNotify(`${this.scriptName} `, `${message} `);
         }
         else {
             console.log('⚠️ 未开启推送或者无消息可推送')
         }
     }
-    async sendMessage(msg, isPush = false, isNeedTimes = false) {
+    async sendMessage(msg, isPush = false) {
         // 等待锁释放
         while (this.lock) {
             await new Promise(resolve => setTimeout(resolve, 10));
@@ -543,10 +553,10 @@ class WQWLBase {
 
         this.lock = true;
         try {
+            if (this.isNeedTimes)
+                msg = `[${this.getDateDetail()}] ${msg}`
             if (isPush) {
                 //console.log("本消息进行推送");
-                if (isNeedTimes)
-                    msg = `[${this.getDateDetail()}] ${msg}`
                 this.sendText += msg + "\n";
                 msg = `${msg} 🚀[push]`
                 //console.log(`[DEBUG] 调用后sendText: "${this.sendText}"`);
@@ -574,38 +584,48 @@ class WQWLBase {
     formatAccountLogs(msg) {
         const lines = msg.split('\n').filter(line => line.trim() !== '');
 
-        // 按账号分组
         const accountGroups = {};
 
         lines.forEach(line => {
-            const accountMatch = line.match(/账号\[(\d+)\]\(([^)]+)\):(.+)/);
-            if (accountMatch) {
-                const accountKey = `账号[${accountMatch[1]}](${accountMatch[2]})`;
-                const content = accountMatch[3].trim();
+            // 匹配：可选时间戳 + 账号[1](xxx): 内容
+            const match = line.match(/^(?:\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\]\s*)?账号\[(\d+)\]\(([^)]+)\):(.+)$/);
+            if (match) {
+                const timestamp = match[1] || ''; // 可能为空
+                const accountIndex = match[2];
+                const accountName = match[3];
+                const content = match[4].trim();
+
+                const accountKey = `账号[${accountIndex}](${accountName})`;
 
                 if (!accountGroups[accountKey]) {
                     accountGroups[accountKey] = [];
                 }
 
-                accountGroups[accountKey].push(content);
+                // 存储 { timestamp, content }，便于后续格式化
+                accountGroups[accountKey].push({ timestamp, content });
             }
         });
 
         // 按账号编号排序
         const sortedAccounts = Object.keys(accountGroups).sort((a, b) => {
-            const numA = parseInt(a.match(/\[(\d+)\]/)[1]);
-            const numB = parseInt(b.match(/\[(\d+)\]/)[1]);
+            const numA = parseInt(a.match(/\[(\d+)\]/)?.[1] || 0, 10);
+            const numB = parseInt(b.match(/\[(\d+)\]/)?.[1] || 0, 10);
             return numA - numB;
         });
 
-        // 生成格式化后的日志
         const formattedLines = [];
         sortedAccounts.forEach(accountKey => {
             formattedLines.push(`${accountKey}:`);
-            accountGroups[accountKey].forEach(content => {
-                formattedLines.push(`  ↳ ${content}`);
+            accountGroups[accountKey].forEach(({ timestamp, content }) => {
+                if (this.isNeedTimes && timestamp) {
+                    // 保留原始时间戳前缀
+                    formattedLines.push(`  [${timestamp}] ↳ ${content}`);
+                } else {
+                    // 不需要时间，或时间不存在
+                    formattedLines.push(`  ↳ ${content}`);
+                }
             });
-            formattedLines.push(''); // 空行分隔不同账号
+            formattedLines.push(''); // 空行分隔
         });
 
         return formattedLines.join('\n').trim();
@@ -642,7 +662,7 @@ class WQWLBaseTask {
 
             if (this.base.isDebug) {
                 if (this.base.isDebug === 2)
-                    console.log(JSON.stringify(options))
+                    this.sendMessage(`[请求配置] ${JSON.stringify(options)}`)
                 const formatData = (data) => {
                     if (data === null) return 'null';
                     if (data === undefined) return 'undefined';
@@ -699,9 +719,9 @@ class WQWLBaseTask {
     }
 
 
-    sendMessage(message, isPush = false, isNeedTimes = false) {
+    sendMessage(message, isPush = false) {
         message = `账号[${this.index + 1}](${this.remark}): ${message}`;
-        return this.base.sendMessage(message, isPush, isNeedTimes);
+        return this.base.sendMessage(message, isPush);
     }
 }
 

@@ -13,7 +13,7 @@ const ckName = 'wqwl_new_yinyu';
 //脚本名称
 const scriptName = '微信小程序新银鱼质亨';
 //本地版本
-const version = 1.0;
+const version = 1.1;
 //是否需要文件存储
 const isNeedFile = true;
 
@@ -21,7 +21,7 @@ const proxy = process.env["wqwl_daili"] || '';
 const isProxy = process.env["wqwl_useProxy"] || false;
 const bfs = process.env["wqwl_bfs"] || 4;
 const isNotify = process.env["wqwl_isNotify"] || true;
-const isDebug = process.env["wqwl_isDebug"] || 2;
+const isDebug = process.env["wqwl_isDebug"] || false;
 
 /**
  * 其他全局环境变量说明
@@ -126,7 +126,7 @@ async function downloadRequire() {
         async init() {
             const ckData = this.ck.split('#')
             // console.log(ckData)
-            if (ckData.length < 2) {
+            if (ckData.length < 1) {
                 this.sendMessage(`${this.index + 1} 环境变量有误，请检查环境变量是否正确`, true);
                 return false;
             }
@@ -224,8 +224,10 @@ async function downloadRequire() {
         }
 
         async watchVideos() {
-            if (this.videoIds.length <= 0)
-                return this.sendMessage(`⚠️ 无视频可刷，跳过此步骤`)
+            if (this.videoIds.length <= 0) {
+                this.sendMessage(`⚠️ 无视频可刷，跳过此步骤`)
+                return true
+            }
             try {
                 const header = JSON.parse(JSON.stringify(this.headers))
                 header['content-type'] = 'application/json'
@@ -256,6 +258,10 @@ async function downloadRequire() {
                     if (res || res.status == 200) {
                         this.sendMessage(`🎥 视频 ${i + 1}/${total} 刷完 (ID: ${this.videoIds[i]})`, i + 1 === total);
                     } else {
+                        if (res?.status === 250) {
+                            this.sendMessage(`⚠️ 视频 ${i + 1}/${total} 异常:估计ck未授权或已经过期，重新抓试试，不行没办法了`)
+                            return false
+                        }
                         this.sendMessage(`⚠️ 视频 ${i + 1}/${total} 异常:`, data?.msg || '无数据')
                     }
                     await wqwlkj.sleep(wqwlkj.getRandom(1, 3))
@@ -279,14 +285,14 @@ async function downloadRequire() {
                 let res = await this.request(options);
                 if (res?.status == 200) {
                     const money = res?.data?.user_money
-                    if (money) {
+                    if (money !== undefined && money !== null) {
                         this.sendMessage(`✅ 获取余额成功，当前余额：${money}`, true)
                         this.money = money
                     } else {
                         this.sendMessage(`❌ 获取余额失败:${res?.msg || "未知原因"}`)
                     }
                 } else {
-                    this.sendMessage(`❌ 获取余额失败:${res?.msg || "未知原因"}`)
+                    this.sendMessage(`❌ 获取余额请求失败:${res?.msg || "未知原因"}`)
                 }
 
             }
@@ -331,7 +337,7 @@ async function downloadRequire() {
             if (!getId) return;
             this.sendMessage(`📽️ 获取到 ${this.videoIds.length} 个视频ID，准备刷视频...`)
             const watchVideo = await this.watchVideos()
-
+            if (!watchVideo) return;
             await this.getMoney()
             // this.sendMessage(`💳 正在尝试提现...`)
             // await this.doWithdraw()
