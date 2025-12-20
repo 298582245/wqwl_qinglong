@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
+const http = require('http');
 const https = require('https');
 const { constants } = require('crypto');
 let message = "";
@@ -87,33 +88,53 @@ function aesDecrypt(encryptedData, key, iv = '', cipher = 'aes-128-cbc', keyEnco
 
 
 async function request(options, proxy = '') {
-    let agent = new https.Agent({
-        ciphers: 'DEFAULT@SECLEVEL=1',
-        secureOptions: constants.SSL_OP_LEGACY_SERVER_CONNECT,
-        minVersion: 'TLSv1',
-        maxVersion: 'TLSv1.2',
-        rejectUnauthorized: false
-    });
+
+
+    // 检查URL协议
+    const isHttps = options.url.startsWith('https://');
+    const isHttp = options.url.startsWith('http://');
+
+    // 如果没有协议前缀，添加http://
+    if (!isHttps && !isHttp) {
+        options.url = 'http://' + options.url;
+    }
+
+    // 再次检查
+    const protocol = options.url.startsWith('https://') ? https : http;
+
+    let agent;
+
+    if (options.url.startsWith('https://')) {
+        agent = new https.Agent({
+            ciphers: 'DEFAULT@SECLEVEL=1',
+            secureOptions: constants.SSL_OP_LEGACY_SERVER_CONNECT,
+            minVersion: 'TLSv1',
+            maxVersion: 'TLSv1.2',
+            rejectUnauthorized: false
+        });
+    } else {
+        // 对于HTTP，使用普通的http.Agent
+        agent = new http.Agent({ keepAlive: true });
+    }
 
     if (proxy) {
         try {
-            // 检查模块是否存在
-            if (typeof require('https-proxy-agent') === 'function' ||
-                typeof require('https-proxy-agent').HttpsProxyAgent === 'function') {
+            if (options.url.startsWith('https://')) {
                 const { HttpsProxyAgent } = require('https-proxy-agent');
                 agent = new HttpsProxyAgent(`http://${proxy}`);
             } else {
-                console.log('⚠️ https-proxy-agent 模块未安装，将不使用代理');
+                const { HttpProxyAgent } = require('http-proxy-agent');
+                agent = new HttpProxyAgent(`http://${proxy}`);
             }
         } catch (e) {
-            console.log(`❌ 创建代理代理失败: ${e.message}`)
+            console.log(`❌ 创建代理代理失败: ${e.message}`);
         }
     }
 
     const config = {
         ...options,
-        httpsAgent: agent,
-        httpAgent: agent,
+        httpsAgent: options.url.startsWith('https://') ? agent : undefined,
+        httpAgent: options.url.startsWith('http://') ? agent : undefined,
         validateStatus: () => true,
     };
 
@@ -457,7 +478,7 @@ function hmacSHA256(data, key, inputEncoding = 'utf8') {
 
 //基础模板类，
 class WQWLBase {
-    constructor(wqwlkj, ckName, scriptName, version, isNeedFile, proxy, isProxy, bfs, isNotify, isDebug, isNeedTimes = false) {
+    constructor(wqwlkj, ckName, scriptName, version, isNeedFile, proxy, isProxy, bfs, isNotify, isDebug, isNeedTimes = false, isNeedDetailed = false) {
         this.wqwlkj = wqwlkj;
         this.ckName = ckName;
         this.scriptName = scriptName;
@@ -472,6 +493,8 @@ class WQWLBase {
         this.sendText = ''
         this.lock = false;//发消息的锁，没法了
         this.isNeedTimes = isNeedTimes;
+        this.statistic = new WQWLStatistic(scriptName);
+        this.isNeedDetailed = isNeedDetailed;
     }
 
     async initFramework() {
@@ -510,7 +533,8 @@ class WQWLBase {
         console.log(`🚀 ${this.scriptName}开始执行...`);
         const tokens = this.wqwlkj.checkEnv(process.env[this.ckName]);
         const totalBatches = Math.ceil(tokens.length / this.bfs);
-
+        //重置统计
+        await this.statistic.reset();
         for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
             const start = batchIndex * this.bfs;
             const end = start + this.bfs;
@@ -529,17 +553,41 @@ class WQWLBase {
                 }
             });
 
+            // 检查当前统计队列情况
+            const pendingCount = this.statistic.getPendingCount();
+            if (pendingCount > 100) {
+                console.log(`⏳ 统计队列中有 ${pendingCount} 个任务，等待清理...`);
+                await this.statistic.waitForAll();
+            }
+
             await this.wqwlkj.sleep(this.wqwlkj.getRandom(3, 5));
         }
         if (this.fileData)
             this.wqwlkj.saveFile(this.fileData, this.scriptName)
         console.log(`🎉 ${this.scriptName}全部任务已完成！`);
+        // 等待所有统计操作完成
+        console.log('⏳ 等待所有统计操作完成...');
+        await this.statistic.waitForAll();
+
+        const statsOutput = await this.statistic.formatOutput();
 
         if (this.sendText !== '' && this.isNotify === true && notify) {
-            const message = this.formatAccountLogs(this.sendText)
+            let message = this.formatAccountLogs(this.sendText)
             console.log(`\n推送消息汇总：\n`)
+            if (statsOutput) {
+                if (this.isNeedDetailed) {
+                    message = `${statsOutput}\n${message}`
+                } else {
+                    console.log(statsOutput)
+                }
+            }
             console.log(message)
             await notify.sendNotify(`${this.scriptName} `, `${message} `);
+        }
+        else if (statsOutput && this.sendText === '' && this.isNotify === true && notify) {
+            // 如果没有其他消息，只推送统计结果
+            console.log('📊 无详细消息，仅推送统计结果');
+            await notify.sendNotify(`${this.scriptName} - 执行统计结果`, `${statsOutput}`);
         }
         else {
             console.log('⚠️ 未开启推送或者无消息可推送')
@@ -633,17 +681,357 @@ class WQWLBase {
 }
 //基础任务类
 class WQWLBaseTask {
+
     constructor(token, index, base) {
         this.ck = token;
         this.index = index;
         this.base = base;
-        this.proxy = ''
+        this.proxy = '';
         this.maxRetries = 3;
         this.retryDelay = 3;
+        this.scheduleInterval = null;
+        this.scheduleResults = [];
+    }
+
+    格式化结果方法
+    formatResult(result) {
+        if (result === null || result === undefined) {
+            return result === null ? 'null' : 'undefined';
+        }
+
+        if (typeof result === 'string') {
+            return result.length > 50 ? result.substring(0, 50) + '...' : result;
+        }
+
+        if (typeof result === 'object') {
+            try {
+                const jsonStr = JSON.stringify(result);
+                return jsonStr.length > 50 ? jsonStr.substring(0, 50) + '...' : jsonStr;
+            } catch {
+                return '[复杂对象]';
+            }
+        }
+
+        return String(result);
+    }
+
+    // 输出结果方法
+    outputScheduleResults(timeStr, results, duration) {
+        const methodName = `定时结果[${timeStr}]`;
+
+        if (!results || results.length === 0) {
+            this.sendMessage(`📊 [${methodName}] 没有执行结果`, true);
+            return;
+        }
+
+        const successCount = results.filter(r => r.success).length;
+        const failCount = results.length - successCount;
+
+        let summary = `\n📊 [${methodName}] 执行完成\n`;
+        summary += `⏱️ 耗时: ${duration}秒\n`;
+        summary += `📊 总计: ${results.length}次\n`;
+        summary += `✅ 成功: ${successCount}次\n`;
+        summary += `❌ 失败: ${failCount}次\n`;
+        summary += `📅 完成时间: ${this.base.wqwlkj.formatDate(new Date(), true)}\n`;
+
+        if (successCount > 0) {
+            summary += `\n📋 执行结果:\n`;
+            results.forEach(item => {
+                if (item.success) {
+                    const resultStr = this.formatResult(item.result);
+                    summary += `  第${item.index}次: ${resultStr} (${item.time})\n`;
+                }
+            });
+        }
+
+        if (failCount > 0) {
+            summary += `\n🚨 异常结果:\n`;
+            results.forEach(item => {
+                if (!item.success) {
+                    summary += `  第${item.index}次: ${item.error} (${item.time})\n`;
+                }
+            });
+        }
+
+        this.sendMessage(summary);
+    }
+
+    // 定时任务类
+    ScheduleExecutor = class {
+        constructor(parent) {
+            this.parent = parent;
+            this.scheduleResults = [];
+        }
+
+        // 执行定时任务的核心方法
+        async executeScheduledTask(func, timeStr, concurrent, maxTimes, delayMs) {
+            const methodName = `定时执行[${timeStr}]`;
+            const results = [];
+            const startTime = new Date();
+
+            try {
+                if (concurrent) {
+                    // 并发执行
+                    this.parent.sendMessage(`⚡ [${methodName}] 开始并发执行，次数：${maxTimes}`);
+
+                    const promises = [];
+                    for (let i = 0; i < maxTimes; i++) {
+                        promises.push(
+                            (async (index) => {
+                                try {
+                                    // 使用func.call(parent)确保在父类上下文中执行
+                                    const result = await func.call(this.parent);
+                                    return {
+                                        index: index + 1,
+                                        success: true,
+                                        result: result,
+                                        time: new Date().toLocaleTimeString('zh-CN', {
+                                            hour12: false,
+                                            hour: '2-digit',
+                                            minute: '2-digit',
+                                            second: '2-digit'
+                                        })
+                                    };
+                                } catch (error) {
+                                    return {
+                                        index: index + 1,
+                                        success: false,
+                                        error: error.message,
+                                        time: new Date().toLocaleTimeString('zh-CN', {
+                                            hour12: false,
+                                            hour: '2-digit',
+                                            minute: '2-digit',
+                                            second: '2-digit'
+                                        })
+                                    };
+                                }
+                            })(i)
+                        );
+                    }
+
+                    const settledResults = await Promise.allSettled(promises);
+                    settledResults.forEach(settled => {
+                        if (settled.status === 'fulfilled') {
+                            results.push(settled.value);
+                        }
+                    });
+                } else {
+                    // 顺序执行
+                    this.parent.sendMessage(`🔄 [${methodName}] 开始顺序执行，次数：${maxTimes}，间隔：${delayMs}ms`);
+
+                    for (let i = 0; i < maxTimes; i++) {
+                        try {
+                            // 使用func.call(parent)确保在父类上下文中执行
+                            const result = await func.call(this.parent);
+                            results.push({
+                                index: i + 1,
+                                success: true,
+                                result: result,
+                                time: new Date().toLocaleTimeString('zh-CN', {
+                                    hour12: false,
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    second: '2-digit'
+                                })
+                            });
+                            this.parent.sendMessage(`✅ [${methodName}] 第${i + 1}次请求成功`);
+                            if (result) break;
+                        } catch (error) {
+                            results.push({
+                                index: i + 1,
+                                success: false,
+                                error: error.message,
+                                time: new Date().toLocaleTimeString('zh-CN', {
+                                    hour12: false,
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    second: '2-digit'
+                                })
+                            });
+                            this.parent.sendMessage(`❌ [${methodName}] 第${i + 1}次执行失败: ${error.message}`);
+                        }
+
+                        // 如果不是最后一次，等待延迟
+                        if (i < maxTimes - 1) {
+                            await new Promise(resolve => setTimeout(resolve, delayMs));
+                        }
+                    }
+                }
+
+                // 计算执行耗时
+                const endTime = new Date();
+                const duration = (endTime - startTime) / 1000;
+
+                // 存储结果到父类
+                this.parent.scheduleResults.push({
+                    timeStr: timeStr,
+                    startTime: this.parent.base.wqwlkj.formatDate(new Date(startTime), true),
+                    endTime: this.parent.base.wqwlkj.formatDate(new Date(endTime), true),
+                    duration: duration.toFixed(2),
+                    results: results
+                });
+
+                // 输出结果摘要
+                this.parent.outputScheduleResults(timeStr, results, duration);
+
+                return results;
+            } catch (error) {
+                this.parent.sendMessage(`❌ [${methodName}] 执行失败: ${error.message}`, true);
+                throw error;
+            }
+        }
+
+        // 启动定时检测（返回Promise）
+        async startScheduleDetection(func, timeStr, targetTime, concurrent, maxTimes, delayMs) {
+            const methodName = `定时检测[${timeStr}]`;
+            const targetTimestamp = targetTime.getTime();
+
+            return new Promise((resolve, reject) => {
+                const checkInterval = 100;
+                let lastLogTime = Date.now();
+                const logInterval = 30 * 1000;
+
+                const checkTimer = setInterval(async () => {
+                    const now = Date.now();
+                    const timeDiff = targetTimestamp - now;
+
+                    // 每30秒输出一次日志
+                    if (now - lastLogTime >= logInterval) {
+                        const remainingSeconds = Math.round(timeDiff / 1000);
+                        this.parent.sendMessage(`⏰ [${methodName}] 距离执行还有 ${remainingSeconds} 秒`);
+                        lastLogTime = now;
+                    }
+
+                    // 检查是否应该执行
+                    if (timeDiff <= 0) {
+                        clearInterval(checkTimer);
+                        this.parent.sendMessage(`⏰ [${methodName}] 时间到，开始执行`);
+
+                        try {
+                            const results = await this.executeScheduledTask(func, timeStr, concurrent, maxTimes, delayMs);
+                            resolve(results);
+                        } catch (error) {
+                            reject(error);
+                        }
+                    }
+                }, checkInterval);
+
+                // 超时保护（半小时）
+                setTimeout(() => {
+                    clearInterval(checkTimer);
+                    reject(new Error('定时检测超时'));
+                }, 30 * 60 * 1000);
+            });
+        }
+
+        // 主调度方法（返回Promise，可以被await）
+        async scheduleExecute(
+            func,
+            timeStr,
+            concurrent = true,
+            maxTimes = 3,
+            delayMs = 50
+        ) {
+            const methodName = `定时任务[${timeStr}]`;
+
+            return new Promise(async (resolve, reject) => {
+                try {
+                    const now = new Date();
+                    const currentTime = now.getTime();
+
+                    // 解析目标时间
+                    const [targetHour, targetMinute, targetSecond] = timeStr.split(':').map(Number);
+
+                    // 今天的目标时间
+                    const targetTimeToday = new Date(now);
+                    targetTimeToday.setHours(targetHour, targetMinute, targetSecond, 0);
+
+                    // 明天同一时间
+                    const targetTimeTomorrow = new Date(targetTimeToday);
+                    targetTimeTomorrow.setDate(targetTimeTomorrow.getDate() + 1);
+
+                    // 计算时间差
+                    const diffToday = targetTimeToday.getTime() - currentTime;
+                    const diffTomorrow = targetTimeTomorrow.getTime() - currentTime;
+
+                    // 选择最接近的未来的目标时间
+                    let targetTime;
+                    let timeDiff;
+
+                    if (diffToday >= 0) {
+                        targetTime = targetTimeToday;
+                        timeDiff = diffToday;
+                    } else {
+                        targetTime = targetTimeTomorrow;
+                        timeDiff = diffTomorrow;
+                    }
+
+                    // 时间窗口定义
+                    const tenMinutesMs = 10 * 60 * 1000;
+                    const oneMinuteMs = 60 * 1000;
+
+                    // 判断执行逻辑
+                    if (timeDiff > tenMinutesMs) {
+                        this.parent.sendMessage(`⏰ [${methodName}] 距离目标时间超过10分钟（${Math.round(timeDiff / 1000)}秒），不启动定时器`);
+                        resolve({
+                            status: 'skipped',
+                            reason: 'too_early',
+                            timeDiff,
+                            message: '距离目标时间超过10分钟，跳过执行'
+                        });
+                        return;
+                    }
+                    else if (timeDiff > 0 && timeDiff <= tenMinutesMs) {
+                        this.parent.sendMessage(`⏰ [${methodName}] 距离目标时间${Math.round(timeDiff / 1000)}秒，启动定时器`);
+
+                        // 启动定时检测并等待结果
+                        const results = await this.startScheduleDetection(
+                            func, timeStr, targetTime, concurrent, maxTimes, delayMs
+                        );
+                        resolve({
+                            status: 'completed',
+                            results,
+                            executionType: 'scheduled',
+                            message: '定时任务执行完成'
+                        });
+                    }
+                    else if (timeDiff <= 0 && Math.abs(timeDiff) <= oneMinuteMs) {
+                        this.parent.sendMessage(`⏰ [${methodName}] 已超过目标时间${Math.round(Math.abs(timeDiff) / 1000)}秒（在1分钟内），立即执行`);
+                        const results = await this.executeScheduledTask(func, timeStr, concurrent, maxTimes, delayMs);
+                        resolve({
+                            status: 'completed',
+                            results,
+                            executionType: 'immediate',
+                            message: '立即执行完成'
+                        });
+                    }
+                    else {
+                        this.parent.sendMessage(`⏰ [${methodName}] 已超过目标时间${Math.round(Math.abs(timeDiff) / 1000)}秒（超过1分钟），跳过执行`);
+                        resolve({
+                            status: 'skipped',
+                            reason: 'too_late',
+                            timeDiff,
+                            message: '已超过目标时间1分钟以上，跳过执行'
+                        });
+                    }
+                } catch (error) {
+                    this.parent.sendMessage(`❌ [${methodName}] 调度出错: ${error.message}`, true);
+                    reject(error);
+                }
+            });
+        }
+    }
+
+    // 父类的定时执行方法（按需创建内部类实例）
+    async scheduleExecute(func, timeStr, concurrent = true, maxTimes = 3, delayMs = 50) {
+        // 按需创建内部类实例
+        const executor = new this.ScheduleExecutor(this);
+
+        // 调用内部类方法并返回Promise
+        return executor.scheduleExecute(func, timeStr, concurrent, maxTimes, delayMs);
     }
 
     async init() {
-        // 由子类实现
         return true;
     }
 
@@ -651,11 +1039,59 @@ class WQWLBaseTask {
         // 由子类实现
     }
 
+    // 统计方法（不等待）
+    statisticSetValue(action = '默认动作', status = 0, isNeedCalculate = false, value = 0, unit = '元') {
+        // 不等待，直接返回null
+        return this.base.statistic.setValue(action, status, isNeedCalculate, value, unit);
+    }
+
+    //成功带计算值
+    statisticSetSuccessWithValue(action = '默认动作', value = 0, unit = '元') {
+        // 不等待，直接返回null
+        return this.base.statistic.setValue(action, 0, true, value, unit);
+    }
+
+    //成功不带计算值
+    statisticSetSuccess(action = '默认动作') {
+        // 不等待，直接返回null
+        return this.base.statistic.setValue(action, 0, false, 0, '元');
+    }
+
+    //失败不带计算值
+    statisticSetFailure(action = '默认动作') {
+        // 不等待，直接返回null
+        return this.base.statistic.setValue(action, 1, false, 0, '元');
+    }
+
+    // 批量统计（不等待）
+    statisticSetValues(actionStatusPairs, isNeedCalculate = false, values = [], unit = '元') {
+        return this.base.statistic.setValues(actionStatusPairs, isNeedCalculate, values, unit);
+    }
+
+    // 新增：一个操作多个收益（主要方法）
+    statisticMulti(action, values) {
+        // 只计一次成功
+        this.statisticSetSuccess(action);
+        // 分别统计各种收益（不增加计数）
+        Object.entries(values).forEach(([unit, value]) => {
+            this.base.statistic.addValue(action, unit, value);
+        });
+        return null;
+    }
+
+    // 如果需要获取统计结果，才需要等待
+    async getStatistic() {
+        return await this.base.statistic.getStats();
+    }
+
+    async formatStatisticOutput() {
+        return await this.base.statistic.formatOutput();
+    }
+
     async request(options, retryCount = 0) {
         try {
             if (this.base.proxyUrl && this.base.isProxy && this.proxy == '') {
-                this.proxy = await wqwlkj.getProxy(this.index, this.base.proxyUrl)
-                //console.log(`使用代理：${this.proxy}`)
+                this.proxy = await this.base.wqwlkj.getProxy(this.index, this.base.proxyUrl)
                 this.sendMessage(`✅使用代理：${this.proxy}`)
             }
             const data = await this.base.wqwlkj.request(options, this.proxy);
@@ -688,7 +1124,7 @@ class WQWLBaseTask {
             console.log(error)
             let newProxy;
             if (this.base.isProxy) {
-                newProxy = await wqwlkj.getProxy(this.index, this.base.proxyUrl)
+                newProxy = await this.base.wqwlkj.getProxy(this.index, this.base.proxyUrl)
                 this.proxy = newProxy;
                 this.sendMessage(`✅ 代理更新成功:${this.proxy}`);
             } else {
@@ -718,13 +1154,224 @@ class WQWLBaseTask {
         }
     }
 
-
     sendMessage(message, isPush = false) {
         message = `账号[${this.index + 1}](${this.remark}): ${message}`;
         return this.base.sendMessage(message, isPush);
     }
 }
 
+//统计类
+class WQWLStatistic {
+    constructor(scriptName) {
+        this.scriptName = scriptName
+        this.action = {};
+        this.lock = false;
+        this.pendingPromises = new Set(); // 跟踪所有异步操作
+    }
+
+    // 获取锁（带超时）
+    async acquireLock(timeout = 1000) {
+        const startTime = Date.now();
+        while (this.lock) {
+            if (Date.now() - startTime > timeout) {
+                throw new Error('获取锁超时');
+            }
+            await new Promise(resolve => setTimeout(resolve, 5)); // 更短的等待
+        }
+        this.lock = true;
+    }
+
+    // 释放锁
+    releaseLock() {
+        this.lock = false;
+    }
+
+    // 安全的加锁执行函数
+    async executeWithLock(fn) {
+        await this.acquireLock();
+        try {
+            return await fn();
+        } finally {
+            this.releaseLock();
+        }
+    }
+
+    // 异步统计，但不等待（fire and forget）
+    setValue(action = '默认动作', status = 0, isNeedCalculate = false, value = 0, unit = '元') {
+        // 创建异步操作但不等待
+        const promise = this._setValueInternal(action, status, isNeedCalculate, value, unit);
+        this.pendingPromises.add(promise);
+
+        // 异步操作完成后清理
+        promise.finally(() => {
+            this.pendingPromises.delete(promise);
+        });
+
+        // 不返回promise，不让调用者等待
+        return null;
+    }
+
+    // 内部实现
+    async _setValueInternal(action = '默认动作', status = 0, isNeedCalculate = false, value = 0, unit = '元') {
+        return await this.executeWithLock(async () => {
+            const VALID_STATUS = ['success', 'failure'];
+            const statusKey = VALID_STATUS[status] || VALID_STATUS[0];
+
+            if (!this.action['extra']) {
+                this.action['extra'] = {}
+            }
+
+            if (!this.action[action]) {
+                this.action[action] = {
+                    success: 0,
+                    failure: 0,
+                    total: 0,
+                };
+            }
+
+            if (isNeedCalculate) {
+                if (!this.action['extra'][unit]) {
+                    this.action['extra'][unit] = 0;
+                }
+            }
+
+            // 更新统计
+            this.action[action][statusKey] += 1;
+            this.action[action]['total'] += 1;
+
+            // 计算收益（只有成功时才计算）
+            if (isNeedCalculate && this.action['extra'] && status === 0) {
+                // 尝试将字符串转为数字
+                const numValue = parseFloat(value);
+                if (!isNaN(numValue)) {
+                    // 如果是有效的数字字符串，使用转换后的值
+                    value = numValue;
+                }
+                this.action['extra'][unit] += value;
+            }
+
+            return true;
+        });
+    }
+
+    // 新增：只添加收益，不增加计数
+    addValue(action = '默认动作', unit = '元', value = 0) {
+        // 创建异步操作但不等待
+        const promise = this._addValueInternal(action, unit, value);
+        this.pendingPromises.add(promise);
+
+        promise.finally(() => {
+            this.pendingPromises.delete(promise);
+        });
+
+        return null;
+    }
+
+    // 内部实现：只添加收益
+    async _addValueInternal(action = '默认动作', unit = '元', value = 0) {
+        return await this.executeWithLock(async () => {
+            // 确保 extra 结构存在
+            if (!this.action['extra']) {
+                this.action['extra'] = {};
+            }
+
+            // 初始化该单位的统计
+            if (!this.action['extra'][unit]) {
+                this.action['extra'][unit] = 0;
+            }
+
+            // 累加收益
+            if (typeof this.action['extra'][unit] !== 'number') {
+                this.action['extra'][unit] = 0;
+            }
+            this.action['extra'][unit] += value;
+
+            return true;
+        });
+    }
+
+    // 批量设置（同样不等待）
+    setValues(actionStatusPairs, isNeedCalculate = false, values = [], unit = '元') {
+        actionStatusPairs.forEach((pair, index) => {
+            const [action, status] = pair;
+            const value = values[index] || 0;
+            this.setValue(action, status, isNeedCalculate, value, unit);
+        });
+        return null;
+    }
+
+    // 等待所有异步统计完成
+    async waitForAll() {
+        const promises = Array.from(this.pendingPromises);
+        if (promises.length === 0) return true;
+
+        console.log(`⏳ 等待 ${promises.length} 个统计操作完成...`);
+        await Promise.allSettled(promises);
+        console.log('✅ 所有统计操作已完成');
+        return true;
+    }
+
+    // 获取当前统计结果（需要等待统计完成）
+    async getStats() {
+        await this.waitForAll(); // 确保所有统计已完成
+        return await this.executeWithLock(() => {
+            return JSON.parse(JSON.stringify(this.action));
+        });
+    }
+
+    // 重置统计
+    async reset() {
+        await this.waitForAll(); // 等待当前统计完成
+        return await this.executeWithLock(() => {
+            this.action = {};
+            return true;
+        });
+    }
+
+    async formatOutput() {
+        await this.waitForAll(); // 确保所有统计已完成
+
+        return await this.executeWithLock(() => {
+            if (Object.keys(this.action).length === 0) {
+                console.log(`⚠️ 没有任何函数使用综合统计`)
+                return false;
+            }
+
+            let result = `====== 任务统计汇总 ======\n`;
+
+            Object.keys(this.action).forEach(key => {
+                if (key === 'extra') return;
+                const actionData = this.action[key];
+                result += `📊 [${key}] 总执次数：${actionData['total']}次\n`;
+                result += `✅ [${key}] 成功个数：${actionData['success']}个\n`;
+                result += `❌ [${key}] 失败个数：${actionData['failure']}个\n`;
+
+                result += `---------------------\n`;
+            });
+            // 如果有收益统计（按单位分别显示）
+            if (this.action['extra'] && Object.keys(this.action['extra']).length > 0) {
+                const extraList = [];
+                Object.keys(this.action['extra']).forEach(unit => {
+                    const value = this.action['extra'][unit];
+                    if (typeof value === 'number' && value !== 0) {
+                        extraList.push(`${value.toFixed(2)}${unit}`);
+                    }
+                });
+                if (extraList.length > 0) {
+                    result += `💰 总计收益：${extraList.join('、')}\n`;
+                }
+            }
+
+            result += `====== 详细结果 ======`;
+            return result;
+        });
+    }
+
+    // 获取进行中的统计数量
+    getPendingCount() {
+        return this.pendingPromises.size;
+    }
+}
 function disclaimer() {
     console.log(`⚠️ 免责声明
 1. 本脚本中涉及的解锁解密分析脚本仅用于测试、学习和研究，禁止用于商业目的。 其合法性、准确性、完整性和有效性无法得到保证。 请根据实际情况作出自己的判断。
@@ -738,9 +1385,9 @@ function disclaimer() {
 9. 您在本脚本使用或复制了由本人开发的任何脚本，即视为已接受此声明。请在使用前仔细阅读以上条款。
 10. 脚本来源：https://github.com/298582245/wqwl_qinglong，QQ裙：960690899
 ============================
-⚠️⚠️⚠️使用代理时，必须安装依赖：https-proxy-agent
-⚠️⚠️⚠️使用代理时，必须安装依赖：https-proxy-agent
-⚠️⚠️⚠️使用代理时，必须安装依赖：https-proxy-agent
+⚠️⚠️⚠️使用代理时，必须安装依赖：https-proxy-agent、http-proxy-agent
+⚠️⚠️⚠️使用代理时，必须安装依赖：https-proxy-agent、http-proxy-agent
+⚠️⚠️⚠️使用代理时，必须安装依赖：https-proxy-agent、http-proxy-agent
 ============================\n
         `)
 }
