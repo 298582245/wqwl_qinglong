@@ -281,6 +281,97 @@ function generateRandomUA() {
     return `${common.prefix}${device.androidVersion}; ${device.model} Build/${device.build}; wv) ${common.webkit}${chromeVersion} ${common.mobileSafari}${common.xwebPrefix}${xwebVersion} ${common.mmwebSdkPrefix}${mmwebSdkDate} ${common.mmwebIdPrefix}${mmwebId} ${common.microMessengerPrefix}${microMessengerVersion} ${common.wechat}${netType} ${common.language}`;
 }
 
+
+function randomUAAlipay() {
+    // 随机生成函数
+    const randomElement = (arr) => arr[Math.floor(Math.random() * arr.length)];
+    const randomNumber = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+    const randomVersion = (major, minorMin, minorMax, patchMin, patchMax) =>
+        `${major}.${randomNumber(minorMin, minorMax)}.${randomNumber(patchMin, patchMax)}`;
+
+    // Android版本池
+    const androidVersions = ['10', '11', '12', '13', '14', '15'];
+
+    // 设备型号池（包含示例中的PJE110）
+    const deviceModels = [
+        'PJE110', 'SM-G991B', 'SM-G998B', 'Pixel 7', 'Pixel 8',
+        'M2102J20SG', 'M2012K11AG', '22081212C', '2210132C'
+    ];
+
+    // Chrome版本范围
+    const chromeMajor = 126;
+
+    // WebView版本范围
+    const webviewMajor = 4;
+
+    // MYWeb版本范围
+    const mywebVersions = ['1.3.126', '1.3.127', '1.3.128', '1.3.129'];
+
+    // UWS/UCBS版本
+    const uwsVersions = ['3.22.2.9999', '3.23.1.1000', '3.24.0.1001'];
+
+    // Alipay版本
+    const alipayVersions = ['10.8.0.8100', '10.8.1.8200', '10.8.2.8300', '10.9.0.9000'];
+
+    // 网络类型
+    const networkTypes = ['WIFI', 'MOBILE', 'UNKNOWN'];
+
+    // 屏幕分辨率
+    const screenWidths = ['360', '392', '412', '430'];
+    const screenHeights = ['800', '844', '892', '926'];
+
+    // 生成随机参数
+    const androidVersion = randomElement(androidVersions);
+    const deviceModel = randomElement(deviceModels);
+    const buildNumber = `TP${randomNumber(1, 2)}A.${randomNumber(220, 230)}${randomNumber(100, 999)}.${randomNumber(100, 999)}`;
+
+    const chromeVersion = `${chromeMajor}.0.${randomNumber(6478, 6499)}.${randomNumber(100, 199)}`;
+    const webviewVersion = `${webviewMajor}.0`;
+
+    const mywebVersion = randomElement(mywebVersions);
+    const timestamp = `${Date.now().toString().slice(0, 10)}${randomNumber(100000, 999999)}`;
+
+    const uwsVersion = randomElement(uwsVersions);
+    const ucbsVersion = `${uwsVersion}_${randomNumber(200, 250)}0000000000`;
+
+    const networkType = randomElement(networkTypes);
+    const screenWidth = randomElement(screenWidths);
+    const screenHeight = randomElement(screenHeights);
+    const screenScale = '3.0';
+    const accelerometer = randomElement(['sp', 'g', 'm']);
+
+    const alipayVersion = randomElement(alipayVersions);
+    const language = 'zh-Hans';
+    const isConcaveScreen = randomElement(['true', 'false']);
+    const region = 'CN';
+    const ariverVersion = alipayVersion;
+    const channelId = randomNumber(1, 10);
+
+    // 构造UA字符串
+    const uaParts = [
+        `Mozilla/5.0 (Linux; Android ${androidVersion}; ${deviceModel} Build/${buildNumber}; wv)`,
+        `AppleWebKit/537.36 (KHTML, like Gecko)`,
+        `Version/${webviewVersion}`,
+        `Chrome/${chromeVersion}`,
+        `MYWeb/${mywebVersion}.${timestamp}`,
+        `UWS/${uwsVersion}`,
+        `UCBS/${ucbsVersion}`,
+        `Mobile Safari/537.36`,
+        `NebulaSDK/${randomVersion(1, 8, 9, 100000, 199999)}`,
+        `Nebula AlipayDefined(nt:${networkType},ws:${screenWidth}|${screenHeight}|${screenScale},ac:${accelerometer})`,
+        `AliApp(AP/${alipayVersion})`,
+        `AlipayClient/${alipayVersion}`,
+        `Language/${language}`,
+        `isConcaveScreen/${isConcaveScreen}`,
+        `Region/${region}`,
+        `Ariver/${ariverVersion}`,
+        `ChannelId(${channelId})`,
+        `DTN/2.0`
+    ];
+
+    return uaParts.join(' ');
+}
+
 function formatDate(date, isDetail = false) {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -1416,5 +1507,6 @@ module.exports = {
 
     newFindTypes: newFindTypes, //新版寻找分类
     WQWLBase: WQWLBase, // 基础模板类
-    WQWLBaseTask: WQWLBaseTask //基础任务类
+    WQWLBaseTask: WQWLBaseTask, //基础任务类
+    randomUAAlipay: randomUAAlipay //随机支付宝ua
 };
